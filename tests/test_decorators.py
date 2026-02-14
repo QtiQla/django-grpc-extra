@@ -6,12 +6,14 @@ from pydantic import BaseModel
 from grpc_extra.decorators import (
     grpc_method,
     grpc_ordering,
+    grpc_permissions,
     grpc_pagination,
     grpc_searching,
     grpc_service,
 )
 from grpc_extra.ordering import Ordering
 from grpc_extra.pagination import LimitOffsetPagination
+from grpc_extra.permissions import AllowAny
 from grpc_extra.searching import Searching
 from grpc_extra.registry import registry
 
@@ -150,6 +152,32 @@ def test_grpc_ordering_requires_position_under_grpc_method():
 
         class _Service:
             @grpc_ordering(Ordering, ordering_fields=["value"])
+            @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+            def list_users(self, request, context):
+                return []
+
+
+def test_permissions_are_declared_on_service_and_method():
+    @grpc_service(app_label="example", permissions=[AllowAny])
+    class UserService:
+        @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+        @grpc_permissions(AllowAny)
+        def get_profile(self, request, context):
+            return {"value": request.value}
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "get_profile"
+    )
+    assert len(definition.meta.permissions) == 1
+    assert len(method_meta.permissions) == 1
+
+
+def test_grpc_permissions_requires_position_under_grpc_method():
+    with pytest.raises(ValueError):
+
+        class _Service:
+            @grpc_permissions(AllowAny)
             @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
             def list_users(self, request, context):
                 return []

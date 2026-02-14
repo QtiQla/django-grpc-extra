@@ -6,10 +6,10 @@ from typing import Any, NoReturn
 from .codec import (
     decode_request_iter,
     decode_request_value,
-    encode_response_iter,
     encode_response_value,
 )
 from .exceptions import MappedError, resolve_exception_mapper
+from .permissions import BasePermission
 from .registry import MethodMeta, ServiceDefinition
 
 
@@ -56,23 +56,35 @@ class ServiceRuntimeAdapter:
         if method is None:
             return None
         if method_meta.client_streaming and method_meta.server_streaming:
-            return self._wrap_stream_stream(method, method_meta, response_pb2_cls)
+            return self._wrap_stream_stream(
+                method, method_meta, response_pb2_cls, servicer
+            )
         if method_meta.client_streaming:
-            return self._wrap_stream_unary(method, method_meta, response_pb2_cls)
+            return self._wrap_stream_unary(
+                method, method_meta, response_pb2_cls, servicer
+            )
         if method_meta.server_streaming:
-            return self._wrap_unary_stream(method, method_meta, response_pb2_cls)
-        return self._wrap_unary_unary(method, method_meta, response_pb2_cls)
+            return self._wrap_unary_stream(
+                method, method_meta, response_pb2_cls, servicer
+            )
+        return self._wrap_unary_unary(method, method_meta, response_pb2_cls, servicer)
 
     def _wrap_unary_unary(
         self,
         method: Callable,
         method_meta: MethodMeta,
         response_pb2_cls: type,
+        service: object | None = None,
     ) -> Callable:
         def wrapper(request, context):
             try:
                 decoded = decode_request_value(request, method_meta.request_schema)
+                self._check_service_permissions(decoded, context, method_meta, service)
+                self._check_method_permissions(decoded, context, method_meta, service)
                 result = method(decoded, context)
+                self._check_obj_permissions(
+                    decoded, context, method_meta, service, result
+                )
                 if method_meta.searching_handler is not None:
                     result = method_meta.searching_handler.search(result, decoded)
                 if method_meta.ordering_handler is not None:
@@ -92,10 +104,13 @@ class ServiceRuntimeAdapter:
         method: Callable,
         method_meta: MethodMeta,
         response_pb2_cls: type,
+        service: object | None = None,
     ) -> Callable:
         def wrapper(request, context) -> Iterator[Any]:
             try:
                 decoded = decode_request_value(request, method_meta.request_schema)
+                self._check_service_permissions(decoded, context, method_meta, service)
+                self._check_method_permissions(decoded, context, method_meta, service)
                 result = method(decoded, context)
                 if method_meta.searching_handler is not None:
                     result = method_meta.searching_handler.search(result, decoded)
@@ -110,6 +125,8 @@ class ServiceRuntimeAdapter:
                     method_meta,
                     response_pb2_cls,
                     context,
+                    decoded,
+                    service,
                 )
             except Exception as exc:
                 self._abort(context, exc)
@@ -121,13 +138,17 @@ class ServiceRuntimeAdapter:
         method: Callable,
         method_meta: MethodMeta,
         response_pb2_cls: type,
+        service: object | None = None,
     ) -> Callable:
         def wrapper(request_iterator, context):
             try:
+                self._check_service_permissions(None, context, method_meta, service)
+                self._check_method_permissions(None, context, method_meta, service)
                 decoded_iter = decode_request_iter(
                     request_iterator, method_meta.request_schema
                 )
                 result = method(decoded_iter, context)
+                self._check_obj_permissions(None, context, method_meta, service, result)
                 if method_meta.pagination_class is not None:
                     raise TypeError(
                         "Pagination is not supported for stream-unary methods."
@@ -145,9 +166,12 @@ class ServiceRuntimeAdapter:
         method: Callable,
         method_meta: MethodMeta,
         response_pb2_cls: type,
+        service: object | None = None,
     ) -> Callable:
         def wrapper(request_iterator, context) -> Iterator[Any]:
             try:
+                self._check_service_permissions(None, context, method_meta, service)
+                self._check_method_permissions(None, context, method_meta, service)
                 decoded_iter = decode_request_iter(
                     request_iterator, method_meta.request_schema
                 )
@@ -161,6 +185,8 @@ class ServiceRuntimeAdapter:
                     method_meta,
                     response_pb2_cls,
                     context,
+                    None,
+                    service,
                 )
             except Exception as exc:
                 self._abort(context, exc)
@@ -173,14 +199,89 @@ class ServiceRuntimeAdapter:
         method_meta: MethodMeta,
         response_pb2_cls: type,
         context,
+        request=None,
+        service: object | None = None,
     ) -> Iterator[Any]:
         try:
-            for item in encode_response_iter(
-                result, method_meta.response_schema, response_pb2_cls
-            ):
+            for raw_item in result:
+                self._check_obj_permissions(
+                    request, context, method_meta, service, raw_item
+                )
+                item = encode_response_value(
+                    raw_item, method_meta.response_schema, response_pb2_cls
+                )
                 yield item
         except Exception as exc:
             self._abort(context, exc)
+
+    def _check_service_permissions(
+        self,
+        request,
+        context,
+        method_meta: MethodMeta,
+        service: object | None,
+    ) -> None:
+        permissions = self.definition.meta.permissions
+        if not permissions:
+            return
+        target = service or self.definition.service
+        self._run_has_perm(permissions, request, context, target, method_meta)
+
+    def _check_method_permissions(
+        self,
+        request,
+        context,
+        method_meta: MethodMeta,
+        service: object | None,
+    ) -> None:
+        permissions = method_meta.permissions
+        if not permissions:
+            return
+        target = service or self.definition.service
+        self._run_has_perm(permissions, request, context, target, method_meta)
+
+    def _check_obj_permissions(
+        self,
+        request,
+        context,
+        method_meta: MethodMeta,
+        service: object | None,
+        obj: Any,
+    ) -> None:
+        permissions = method_meta.permissions
+        if not permissions:
+            return
+        target = service or self.definition.service
+        self._run_has_obj_perm(permissions, request, context, target, method_meta, obj)
+
+    def _run_has_perm(
+        self,
+        permissions: tuple[BasePermission, ...],
+        request,
+        context,
+        service: object,
+        method_meta: MethodMeta,
+    ) -> None:
+        for permission in permissions:
+            if not permission.has_perm(request, context, service, method_meta):
+                raise PermissionError(
+                    getattr(permission, "message", "Permission denied.")
+                )
+
+    def _run_has_obj_perm(
+        self,
+        permissions: tuple[BasePermission, ...],
+        request,
+        context,
+        service: object,
+        method_meta: MethodMeta,
+        obj: Any,
+    ) -> None:
+        for permission in permissions:
+            if not permission.has_obj_perm(request, context, service, method_meta, obj):
+                raise PermissionError(
+                    getattr(permission, "message", "Permission denied.")
+                )
 
     def _abort(self, context, exc: Exception) -> NoReturn:
         mapped = self.exception_mapper(exc)

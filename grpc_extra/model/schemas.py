@@ -44,6 +44,10 @@ class ModelServiceConfig(BaseModel):
     list_ordering_fields: list[str] | str = "__all__"
     list_searching_class: object | None = None
     list_search_fields: list[str] = Field(default_factory=list)
+    permissions: list[object] = Field(default_factory=list)
+    endpoint_permissions: dict[AllowedEndpoints, list[object]] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def validate_exists_schemas_by_allowed_endpoints(self) -> Self:

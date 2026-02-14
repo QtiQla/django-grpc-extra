@@ -1,0 +1,6 @@
+pytest
+pytest-cov
+pytest-django
+django-stubs
+ruff==0.15.1
+mypy==1.19.1

@@ -169,6 +169,7 @@ class ModelServiceBuilder:
             request_schema=request_schema,
             response_schema=response_schema,
             server_streaming=meta["server_streaming"],
+            permissions=self._resolve_endpoint_permissions(endpoint),
         )(handler)
         setattr(self.service_cls, handler_name, wrapped)
 
@@ -257,6 +258,11 @@ class ModelServiceBuilder:
 
     def _supports_list_extensions(self, endpoint: AllowedEndpoints) -> bool:
         return endpoint in {AllowedEndpoints.LIST, AllowedEndpoints.STREAM_LIST}
+
+    def _resolve_endpoint_permissions(self, endpoint: AllowedEndpoints):
+        shared = list(self.config.permissions)
+        specific = list(self.config.endpoint_permissions.get(endpoint, ()))
+        return shared + specific
 
 
 class ModelService:

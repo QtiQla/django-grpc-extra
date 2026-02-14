@@ -1,6 +1,7 @@
 from .decorators import (
     grpc_method,
     grpc_ordering,
+    grpc_permissions,
     grpc_pagination,
     grpc_searching,
     grpc_service,
@@ -14,6 +15,14 @@ from .sdk import (
     SDKGenerationError,
 )
 from .ordering import BaseOrdering, Ordering, OrderingError
+from .permissions import (
+    AllowAny,
+    BasePermission,
+    DjangoModelPermissions,
+    IsAuthActive,
+    IsAuthenticated,
+    IsAuthenticatedActive,
+)
 from .model import (
     AllowedEndpoints,
     DefaultModelDataHelper,
@@ -31,6 +40,7 @@ __all__ = [
     "grpc_pagination",
     "grpc_ordering",
     "grpc_searching",
+    "grpc_permissions",
     "ModelService",
     "ModelServiceConfig",
     "AllowedEndpoints",
@@ -43,6 +53,12 @@ __all__ = [
     "BaseOrdering",
     "Ordering",
     "OrderingError",
+    "BasePermission",
+    "AllowAny",
+    "IsAuthenticated",
+    "IsAuthenticatedActive",
+    "IsAuthActive",
+    "DjangoModelPermissions",
     "BaseSearching",
     "Searching",
     "SearchingError",

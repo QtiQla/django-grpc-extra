@@ -15,6 +15,7 @@ from grpc_extra import (
 from grpc_extra.constants import GRPC_METHOD_META
 from grpc_extra.model.service import ModelServiceBuilder
 from grpc_extra.pagination import LimitOffsetPagination
+from grpc_extra.permissions import IsAuthenticated
 from grpc_extra.registry import registry
 
 
@@ -238,3 +239,17 @@ def test_model_builder_does_not_override_existing_handler():
     builder = ModelServiceBuilder(ExampleService, ExampleService.config)
     builder.build()
     assert ExampleService.list.__name__ == "list"
+
+
+def test_model_service_can_attach_permissions_to_generated_methods():
+    @grpc_service(app_label="example_app", package="example_app")
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[AllowedEndpoints.DETAIL],
+            detail_schema=ExampleOut,
+            permissions=[IsAuthenticated],
+        )
+
+    detail_meta = getattr(ExampleService.detail, GRPC_METHOD_META)
+    assert len(detail_meta.permissions) == 1

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, Type
 
 from pydantic import BaseModel
@@ -9,10 +9,12 @@ from .constants import (
     GRPC_METHOD_META,
     GRPC_ORDERING_META,
     GRPC_PAGINATION_META,
+    GRPC_PERMISSIONS_META,
     GRPC_SEARCHING_META,
     GRPC_SERVICE_META,
 )
 from .ordering import BaseOrdering, get_default_ordering_class, resolve_ordering_class
+from .permissions import PermissionLike, resolve_permissions
 from .pagination import (
     BasePagination,
     get_default_pagination_class,
@@ -35,6 +37,7 @@ def grpc_service(
     proto_path: str | None = None,
     description: str | None = None,
     factory: Callable[[], object] | None = None,
+    permissions: Iterable[PermissionLike] | None = None,
 ) -> Callable[[Type], Type]:
     """Declare a class as a gRPC service and register its metadata.
 
@@ -62,6 +65,7 @@ def grpc_service(
             proto_path=resolved_proto_path,
             description=description,
             factory=factory,
+            permissions=resolve_permissions(permissions),
         )
         setattr(service_cls, GRPC_SERVICE_META, meta)
         registry.register(service_cls)
@@ -78,6 +82,7 @@ def grpc_method(
     description: str | None = None,
     client_streaming: bool = False,
     server_streaming: bool = False,
+    permissions: Iterable[PermissionLike] | None = None,
 ) -> Callable[[Callable], Callable]:
     """Declare a method as an RPC endpoint and attach generation metadata.
 
@@ -96,6 +101,7 @@ def grpc_method(
         searching_meta = getattr(method, GRPC_SEARCHING_META, None)
         ordering_meta = getattr(method, GRPC_ORDERING_META, None)
         pagination_class = getattr(method, GRPC_PAGINATION_META, None)
+        permissions_meta = getattr(method, GRPC_PERMISSIONS_META, ())
         request_schema_resolved = request_schema
         response_schema_resolved = response_schema
         searching_handler = None
@@ -140,6 +146,9 @@ def grpc_method(
             description=description,
             client_streaming=client_streaming,
             server_streaming=server_streaming,
+            permissions=(
+                resolve_permissions(permissions_meta) + resolve_permissions(permissions)
+            ),
         )
         setattr(method, GRPC_METHOD_META, meta)
         return method
@@ -208,6 +217,19 @@ def grpc_searching(
         if resolved is None:
             raise ValueError("Searching class cannot be None.")
         setattr(method, GRPC_SEARCHING_META, (resolved, dict(searching_params)))
+        return method
+
+    return decorator
+
+
+def grpc_permissions(*permissions: PermissionLike) -> Callable[[Callable], Callable]:
+    """Attach permission classes to a grpc method."""
+
+    def decorator(method: Callable) -> Callable:
+        if getattr(method, GRPC_METHOD_META, None) is not None:
+            raise ValueError("grpc_permissions must be placed under @grpc_method.")
+        current = tuple(getattr(method, GRPC_PERMISSIONS_META, ()))
+        setattr(method, GRPC_PERMISSIONS_META, current + tuple(permissions))
         return method
 
     return decorator
