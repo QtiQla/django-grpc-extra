@@ -477,3 +477,8 @@ GRPC_EXTRA = {
     "PHP_GRPC_PLUGIN": "/usr/local/bin/grpc_php_plugin",
 }
 ```
+
+## Acknowledgements
+This project is inspired by:
+- [Django Ninja](https://django-ninja.rest-framework.com)
+- [django-ninja-extra](https://eadwincode.github.io/django-ninja-extra/)
