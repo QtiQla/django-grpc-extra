@@ -101,7 +101,9 @@ class Searching(BaseSearching):
         return LOOKUP_SEP.join([field_name, lookup])
 
     def _conditions_for_queryset(self, terms: list[str]) -> list[Q]:
-        orm_lookups = [self._construct_search_lookup(field) for field in self.search_fields]
+        orm_lookups = [
+            self._construct_search_lookup(field) for field in self.search_fields
+        ]
         conditions: list[Q] = []
         for term in terms:
             queries = [Q(**{lookup: term}) for lookup in orm_lookups]
@@ -139,7 +141,9 @@ class Searching(BaseSearching):
             term_match = False
             for field_name, lookup in lookups.items():
                 try:
-                    raw_value = item[field_name] if is_dict else getattr(item, field_name)
+                    raw_value = (
+                        item[field_name] if is_dict else getattr(item, field_name)
+                    )
                 except Exception as exc:
                     raise SearchingError(
                         f"Search field '{field_name}' is not available on list items."

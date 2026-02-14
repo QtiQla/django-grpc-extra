@@ -18,7 +18,11 @@ from .pagination import (
     get_default_pagination_class,
     resolve_pagination_class,
 )
-from .searching import BaseSearching, get_default_searching_class, resolve_searching_class
+from .searching import (
+    BaseSearching,
+    get_default_searching_class,
+    resolve_searching_class,
+)
 from .registry import MethodMeta, ServiceMeta, registry
 from .utils import to_upper_camel_case
 

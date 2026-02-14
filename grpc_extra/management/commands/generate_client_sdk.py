@@ -140,7 +140,9 @@ class Command(BaseCommand):
         mapping.update(configured.get("SDK_GENERATORS", {}))
         path = mapping.get(language)
         if not path:
-            raise CommandError(f"SDK generator is not configured for language '{language}'.")
+            raise CommandError(
+                f"SDK generator is not configured for language '{language}'."
+            )
         value = import_string(path)
         instance = value() if isinstance(value, type) else value
         if not isinstance(instance, BaseClientSDKGenerator):

@@ -24,7 +24,9 @@ class DummyGenerator(BaseClientSDKGenerator):
     def __init__(self):
         self.called_with = None
 
-    def generate(self, *, proto_files, out_dir: Path, sdk_name: str, include_root: Path) -> Path:
+    def generate(
+        self, *, proto_files, out_dir: Path, sdk_name: str, include_root: Path
+    ) -> Path:
         self.called_with = (list(proto_files), out_dir, sdk_name, include_root)
         target = out_dir / sdk_name
         target.mkdir(parents=True, exist_ok=True)
@@ -103,7 +105,9 @@ def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
 
 
 def test_php_generator_requires_plugin(monkeypatch, tmp_path):
-    monkeypatch.setattr("grpc_extra.sdk.generators.shutil.which", lambda _bin: "/usr/bin/protoc")
+    monkeypatch.setattr(
+        "grpc_extra.sdk.generators.shutil.which", lambda _bin: "/usr/bin/protoc"
+    )
     settings.GRPC_EXTRA = {}
     with pytest.raises(SDKGenerationError):
         PhpClientSDKGenerator().generate(
@@ -146,7 +150,9 @@ def test_handle_runs_generator(monkeypatch, tmp_path):
             )
         ],
     )
-    monkeypatch.setattr(command, "_collect_proto_files", lambda defs, app_map: [tmp_path / "x.proto"])
+    monkeypatch.setattr(
+        command, "_collect_proto_files", lambda defs, app_map: [tmp_path / "x.proto"]
+    )
     monkeypatch.setattr(command, "_include_root", lambda app_configs: tmp_path)
     monkeypatch.setattr(command, "_resolve_generator", lambda language: generator)
 

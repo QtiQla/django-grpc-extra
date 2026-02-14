@@ -39,7 +39,9 @@ class ExampleCreate(BaseModel):
 
 class ExampleListFilter(ModelFilterSchema):
     name: str | None = None
-    ids: list[int] | None = Field(default=None, json_schema_extra={"op": "in", "field": "id"})
+    ids: list[int] | None = Field(
+        default=None, json_schema_extra={"op": "in", "field": "id"}
+    )
 
 
 def setup_function():

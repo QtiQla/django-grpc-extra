@@ -42,7 +42,9 @@ class ModelFilterSchema(BaseModel):
         exclude = bool(extra.get("exclude", False))
 
         if lookup is not None:
-            lookup_name = f"{target_field}{lookup}" if lookup.startswith("__") else lookup
+            lookup_name = (
+                f"{target_field}{lookup}" if lookup.startswith("__") else lookup
+            )
             q = Q(**{lookup_name: field_value})
             return ~q if exclude else q
 
@@ -63,7 +65,9 @@ class ModelFilterSchema(BaseModel):
         elif op == "gte":
             q = Q(**{f"{target_field}__gte": field_value})
         else:
-            raise ValueError(f"Unsupported filter operator '{op}' for field '{field_name}'.")
+            raise ValueError(
+                f"Unsupported filter operator '{op}' for field '{field_name}'."
+            )
 
         return ~q if exclude else q
 

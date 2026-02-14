@@ -336,5 +336,7 @@ def test_unary_stream_wrapper_applies_searching_and_ordering():
         return [{"value": 2}, {"value": 1}, {"value": 3}]
 
     wrapper = adapter._wrap_unary_stream(list_items, method_meta, FakePb2)
-    result = list(wrapper(request_schema(search="1", ordering="-value", value=0), context))
+    result = list(
+        wrapper(request_schema(search="1", ordering="-value", value=0), context)
+    )
     assert [item.payload["value"] for item in result] == [1]

@@ -83,7 +83,9 @@ class SimpleListFilter(BaseModel):
 
 
 class AdvancedListFilter(ModelFilterSchema):
-    ids: list[int] | None = Field(default=None, json_schema_extra={"op": "in", "field": "id"})
+    ids: list[int] | None = Field(
+        default=None, json_schema_extra={"op": "in", "field": "id"}
+    )
 
 
 def _helper(list_filter: type[BaseModel] | None = None) -> DefaultModelDataHelper:
