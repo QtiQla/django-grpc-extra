@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import sys
+from types import ModuleType
+
+import pytest
+from django.db import models
+from pydantic import BaseModel
+
+from grpc_extra.codec import (
+    decode_request_iter,
+    decode_request_value,
+    encode_response_iter,
+    encode_response_value,
+)
+from grpc_extra.exceptions import RequestDecodeError, ResponseEncodeError
+
+
+class ItemSchema(BaseModel):
+    value: int
+
+
+class AttrSchema(BaseModel):
+    value: int
+
+
+class FakePb2:
+    def __init__(self, **kwargs):
+        self.payload = kwargs
+
+
+@dataclass
+class ItemEntity:
+    value: int
+
+
+class IteratorContainer:
+    def __init__(self, items):
+        self._items = items
+
+    def iterator(self):
+        return iter(self._items)
+
+
+class BrokenPb2:
+    def __init__(self, **kwargs):
+        raise ValueError("bad")
+
+
+class CodecModel(models.Model):
+    value = models.IntegerField()
+
+    class Meta:
+        app_label = "tests"
+        managed = False
+
+
+class AttrObj:
+    def __init__(self, value: int):
+        self.value = value
+
+
+def test_decode_request_value_to_pydantic():
+    value = decode_request_value({"value": 11}, ItemSchema)
+    assert isinstance(value, ItemSchema)
+    assert value.value == 11
+
+
+def test_encode_response_value_from_dataclass():
+    encoded = encode_response_value(ItemEntity(value=7), ItemSchema, FakePb2)
+    assert isinstance(encoded, FakePb2)
+    assert encoded.payload == {"value": 7}
+
+
+def test_encode_response_iter_uses_iterator_method():
+    values = IteratorContainer([{"value": 1}, {"value": 2}])
+    encoded = list(encode_response_iter(values, ItemSchema, FakePb2))
+    assert [item.payload["value"] for item in encoded] == [1, 2]
+
+
+def test_decode_request_iter_decodes_every_item():
+    values = list(decode_request_iter([{"value": 1}, {"value": 2}], ItemSchema))
+    assert [x.value for x in values] == [1, 2]
+
+
+def test_decode_and_encode_raise_wrapped_errors():
+    with pytest.raises(RequestDecodeError):
+        decode_request_value({"value": "bad"}, ItemSchema)
+    with pytest.raises(ResponseEncodeError):
+        encode_response_value(123, None, FakePb2)
+
+
+def test_encode_response_value_without_pb2_returns_raw():
+    payload = {"value": 3}
+    assert encode_response_value(payload, ItemSchema, None) is payload
+
+
+def test_encode_response_value_wraps_pb2_constructor_error():
+    with pytest.raises(ResponseEncodeError):
+        encode_response_value({"value": 1}, ItemSchema, BrokenPb2)
+
+
+def test_encode_response_value_from_pydantic_and_mapping():
+    assert (
+        encode_response_value(ItemSchema(value=4), ItemSchema, FakePb2).payload["value"]
+        == 4
+    )
+    assert (
+        encode_response_value({"value": 5}, ItemSchema, FakePb2).payload["value"] == 5
+    )
+
+
+def test_decode_request_value_with_schema_none_returns_input():
+    value = {"x": 1}
+    assert decode_request_value(value, None) is value
+
+
+def test_decode_request_from_protobuf_like_payload(monkeypatch):
+    class PbLike:
+        DESCRIPTOR = object()
+
+    google = ModuleType("google")
+    protobuf = ModuleType("google.protobuf")
+    json_format = ModuleType("google.protobuf.json_format")
+    json_format.MessageToDict = lambda value, preserving_proto_field_name: {"value": 8}
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.protobuf", protobuf)
+    monkeypatch.setitem(sys.modules, "google.protobuf.json_format", json_format)
+    decoded = decode_request_value(PbLike(), ItemSchema)
+    assert decoded.value == 8
+
+
+def test_decode_request_value_from_dataclass_payload():
+    decoded = decode_request_value(ItemEntity(value=9), ItemSchema)
+    assert decoded.value == 9
+
+
+def test_encode_response_value_from_django_model_instance():
+    model_instance = CodecModel(value=12)
+    encoded = encode_response_value(model_instance, AttrSchema, FakePb2)
+    assert encoded.payload["value"] == 12
+
+
+def test_encode_response_value_from_generic_object_attributes():
+    encoded = encode_response_value(AttrObj(13), AttrSchema, FakePb2)
+    assert encoded.payload["value"] == 13

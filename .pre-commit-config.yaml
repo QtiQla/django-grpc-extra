@@ -1,0 +1,22 @@
+repos:
+  - repo: local
+    hooks:
+      - id: formatting_project
+        name: Formatting
+        entry: make format
+        language: python
+        pass_filenames: false
+        always_run: true
+      - id: linting_project
+        name: Linting
+        entry: make lint
+        language: python
+        pass_filenames: false
+        always_run: true
+      - id: tests_project
+        name: Tests
+        entry: make test
+        language: python
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

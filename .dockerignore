@@ -1,0 +1,12 @@
+*.pyc
+.venv*
+.vscode
+.mypy_cache
+.coverage
+htmlcov
+
+dist
+test.py
+.ruff_cache
+__pycache__
+.pytest_cache

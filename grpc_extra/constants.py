@@ -1,0 +1,12 @@
+GET = "Get"
+LIST = "List"
+CREATE = "Create"
+UPDATE = "Update"
+PATCH = "Patch"
+DELETE = "Delete"
+
+GRPC_SERVICE_META = "__grpc_service_meta__"
+GRPC_METHOD_META = "__grpc_method_meta__"
+GRPC_PAGINATION_META = "__grpc_pagination_meta__"
+GRPC_ORDERING_META = "__grpc_ordering_meta__"
+GRPC_SEARCHING_META = "__grpc_searching_meta__"

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-grpc-extra"
+version = "0.1.0"
+description = "Decorator-based gRPC integration for Django."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Vitaly Furtsev" }]
+dependencies = [
+  "Django>=3.2",
+  "pydantic>=2.0",
+  "grpcio>=1.50",
+  "protobuf>=4.25",
+]
+
+[project.optional-dependencies]
+codegen = ["grpcio-tools>=1.50"]
+sdk = ["grpcio-tools>=1.50"]
+health = ["grpcio-health-checking>=1.50"]
+reflection = ["grpcio-reflection>=1.50"]
+reload = ["watchfiles>=0.21"]
+dev = ["pytest>=7", "pytest-django>=4"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["grpc_extra*"]
