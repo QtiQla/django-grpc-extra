@@ -127,6 +127,27 @@ def test_method_object_permission_denies_for_stream_items():
     assert "Denied by has_obj_perm" in message
 
 
+def test_service_level_object_permission_applies_to_detail_methods():
+    adapter = _adapter(service_permissions=(DenyObjectPermission(),))
+    method_meta = MethodMeta(
+        name="Detail",
+        handler_name="detail",
+        request_schema=RequestSchema,
+        response_schema=ResponseSchema,
+    )
+    wrapper = adapter._wrap_unary_unary(
+        lambda request, _context: {"value": request.value},
+        method_meta,
+        FakePb2,
+    )
+
+    with pytest.raises(FakeAbort) as exc:
+        wrapper({"value": 1}, FakeContext())
+    code, message = exc.value.args[0]
+    assert code == grpc.StatusCode.PERMISSION_DENIED
+    assert "Denied by has_obj_perm" in message
+
+
 def test_is_authenticated_and_active_permissions():
     anonymous = FakeContext(user=None)
     inactive = FakeContext(

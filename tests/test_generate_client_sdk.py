@@ -84,7 +84,20 @@ def test_include_root_rejects_multiple_roots(tmp_path):
 def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
     proto = tmp_path / "app" / "grpc" / "proto" / "s.proto"
     proto.parent.mkdir(parents=True)
-    proto.write_text('syntax = "proto3";', encoding="utf-8")
+    proto.write_text(
+        "\n".join(
+            [
+                'syntax = "proto3";',
+                "package app;",
+                "message PingRequest {}",
+                "message PingResponse {}",
+                "service PingService {",
+                "  rpc Ping (PingRequest) returns (PingResponse);",
+                "}",
+            ]
+        ),
+        encoding="utf-8",
+    )
     calls = []
 
     class DummyProtoc:
@@ -101,7 +114,61 @@ def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
         include_root=tmp_path,
     )
     assert target.exists()
+    assert (target / "pyproject.toml").exists()
+    assert (target / "src" / "sdk" / "client.py").exists()
+    services_py = (target / "src" / "sdk" / "services.py").read_text(encoding="utf-8")
+    assert "import importlib" not in services_py
+    assert (
+        "from app.grpc.proto.s_pb2_grpc import PingServiceStub as app_grpc_proto_s_pb2_grpc"
+        in services_py
+    )
+    assert any(arg.startswith("--pyi_out=") for arg in calls[0])
     assert calls
+
+
+def test_python_generator_does_not_overwrite_root_files_if_target_exists(
+    monkeypatch, tmp_path
+):
+    proto = tmp_path / "app" / "grpc" / "proto" / "s.proto"
+    proto.parent.mkdir(parents=True)
+    proto.write_text(
+        "\n".join(
+            [
+                'syntax = "proto3";',
+                "package app;",
+                "message PingRequest {}",
+                "message PingResponse {}",
+                "service PingService {",
+                "  rpc Ping (PingRequest) returns (PingResponse);",
+                "}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyProtoc:
+        @staticmethod
+        def main(_args):
+            return 0
+
+    monkeypatch.setitem(sys.modules, "grpc_tools", SimpleNamespace(protoc=DummyProtoc))
+    target_dir = tmp_path / "sdk"
+    target_dir.mkdir(parents=True)
+    (target_dir / "pyproject.toml").write_text("version = '9.9.9'\n", encoding="utf-8")
+    (target_dir / "README.md").write_text("custom readme\n", encoding="utf-8")
+
+    PythonClientSDKGenerator().generate(
+        proto_files=[proto],
+        out_dir=tmp_path,
+        sdk_name="sdk",
+        include_root=tmp_path,
+    )
+
+    assert (target_dir / "pyproject.toml").read_text(
+        encoding="utf-8"
+    ) == "version = '9.9.9'\n"
+    assert (target_dir / "README.md").read_text(encoding="utf-8") == "custom readme\n"
+    assert (target_dir / "src" / "sdk" / "client.py").exists()
 
 
 def test_php_generator_requires_plugin(monkeypatch, tmp_path):
@@ -124,9 +191,10 @@ def test_handle_runs_generator(monkeypatch, tmp_path):
     command.stdout = SimpleNamespace(write=lambda msg: logs.append(msg))
     generator = DummyGenerator()
     app_conf = SimpleNamespace(label="example", path=str(tmp_path / "app"))
+    other_conf = SimpleNamespace(label="other", path=str(tmp_path / "other" / "app"))
     monkeypatch.setattr(
         "grpc_extra.management.commands.generate_client_sdk.apps.get_app_configs",
-        lambda: [app_conf],
+        lambda: [app_conf, other_conf],
     )
     monkeypatch.setattr(
         "grpc_extra.management.commands.generate_client_sdk.registry.clear",
@@ -153,7 +221,6 @@ def test_handle_runs_generator(monkeypatch, tmp_path):
     monkeypatch.setattr(
         command, "_collect_proto_files", lambda defs, app_map: [tmp_path / "x.proto"]
     )
-    monkeypatch.setattr(command, "_include_root", lambda app_configs: tmp_path)
     monkeypatch.setattr(command, "_resolve_generator", lambda language: generator)
 
     command.handle(

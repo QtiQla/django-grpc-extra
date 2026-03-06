@@ -340,3 +340,28 @@ def test_unary_stream_wrapper_applies_searching_and_ordering():
         wrapper(request_schema(search="1", ordering="-value", value=0), context)
     )
     assert [item.payload["value"] for item in result] == [1]
+
+
+def test_unary_unary_wrapper_applies_ordering_inside_items_mapping():
+    adapter = _adapter()
+    context = FakeContext()
+    request_schema = Ordering.build_request_schema(None)
+    response_schema = type(
+        "ListResponseSchema",
+        (BaseModel,),
+        {"__annotations__": {"items": list[ResponseSchema]}},
+    )
+    method_meta = MethodMeta(
+        name="List",
+        handler_name="list_items",
+        request_schema=request_schema,
+        response_schema=response_schema,
+        ordering_handler=Ordering(ordering_fields=["value"]),
+    )
+
+    def list_items(_request, _context):
+        return {"items": [{"value": 2}, {"value": 1}]}
+
+    wrapper = adapter._wrap_unary_unary(list_items, method_meta, FakePb2)
+    result = wrapper(request_schema(ordering="value"), context)
+    assert [item["value"] for item in result.payload["items"]] == [1, 2]

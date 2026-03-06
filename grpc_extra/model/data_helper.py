@@ -45,7 +45,23 @@ class DefaultModelDataHelper(ModelDataHelper):
     """Default CRUD implementation backed by Django ORM."""
 
     def get_queryset(self) -> QuerySet:
-        return self.config.model.objects.all()
+        return self._resolve_queryset(self.config.queryset, option_name="queryset")
+
+    def get_detail_queryset(self) -> QuerySet:
+        configured = self.config.detail_queryset
+        if configured is None:
+            return self.get_queryset()
+        return self._resolve_queryset(configured, option_name="detail_queryset")
+
+    def _resolve_queryset(self, configured, *, option_name: str) -> QuerySet:
+        if configured is None:
+            return self.config.model.objects.all()
+        queryset = configured() if callable(configured) else configured
+        if queryset is None or not hasattr(queryset, "all"):
+            raise TypeError(
+                f"ModelServiceConfig.{option_name} must be a QuerySet-like object or callable returning it."
+            )
+        return cast(QuerySet, queryset.all())
 
     def get_lookup_value(self, request: BaseModel):
         return getattr(request, self.config.lookup_field)
@@ -73,7 +89,9 @@ class DefaultModelDataHelper(ModelDataHelper):
 
     def get_object(self, request: BaseModel):
         lookup_value = self.get_lookup_value(request)
-        return self.get_queryset().get(**{self.config.lookup_field: lookup_value})
+        return self.get_detail_queryset().get(
+            **{self.config.lookup_field: lookup_value}
+        )
 
     def create_object(self, request: BaseModel):
         payload = request.model_dump(mode="python", by_alias=True, exclude_none=True)

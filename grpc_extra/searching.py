@@ -160,6 +160,12 @@ class Searching(BaseSearching):
 def resolve_searching_class(value: object | None) -> type[BaseSearching] | None:
     if value is None:
         return None
+    if isinstance(value, BaseSearching):
+        raise SearchingError(
+            "Searching instance is not supported here. "
+            "Pass searching class (e.g. Searching) to `list_searching_class` and "
+            "pass fields via `list_search_fields`."
+        )
     if isinstance(value, str):
         module_path, _, attr = value.rpartition(".")
         if not module_path or not attr:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any, NoReturn
 
 from .codec import (
@@ -21,7 +21,7 @@ class ServiceRuntimeAdapter:
         definition: ServiceDefinition,
         pb2_module,
         *,
-        exception_mapper: Callable[[Exception], MappedError] | None = None,
+        exception_mapper: Callable[[Exception], MappedError] | str | None = None,
     ) -> None:
         self.definition = definition
         self.pb2_module = pb2_module
@@ -85,10 +85,7 @@ class ServiceRuntimeAdapter:
                 self._check_obj_permissions(
                     decoded, context, method_meta, service, result
                 )
-                if method_meta.searching_handler is not None:
-                    result = method_meta.searching_handler.search(result, decoded)
-                if method_meta.ordering_handler is not None:
-                    result = method_meta.ordering_handler.order(result, decoded)
+                result = self._apply_searching_ordering(result, decoded, method_meta)
                 if method_meta.pagination_class is not None:
                     result = method_meta.pagination_class.paginate(result, decoded)
                 return encode_response_value(
@@ -112,10 +109,7 @@ class ServiceRuntimeAdapter:
                 self._check_service_permissions(decoded, context, method_meta, service)
                 self._check_method_permissions(decoded, context, method_meta, service)
                 result = method(decoded, context)
-                if method_meta.searching_handler is not None:
-                    result = method_meta.searching_handler.search(result, decoded)
-                if method_meta.ordering_handler is not None:
-                    result = method_meta.ordering_handler.order(result, decoded)
+                result = self._apply_searching_ordering(result, decoded, method_meta)
                 if not isinstance(result, Iterable):
                     raise TypeError(
                         f"Method '{method_meta.name}' must return iterable for server streaming."
@@ -248,11 +242,18 @@ class ServiceRuntimeAdapter:
         service: object | None,
         obj: Any,
     ) -> None:
-        permissions = method_meta.permissions
-        if not permissions:
-            return
         target = service or self.definition.service
-        self._run_has_obj_perm(permissions, request, context, target, method_meta, obj)
+        method_permissions = method_meta.permissions
+        if method_permissions:
+            self._run_has_obj_perm(
+                method_permissions, request, context, target, method_meta, obj
+            )
+        if self._is_detail_method(method_meta):
+            service_permissions = self.definition.meta.permissions
+            if service_permissions:
+                self._run_has_obj_perm(
+                    service_permissions, request, context, target, method_meta, obj
+                )
 
     def _run_has_perm(
         self,
@@ -282,6 +283,35 @@ class ServiceRuntimeAdapter:
                 raise PermissionError(
                     getattr(permission, "message", "Permission denied.")
                 )
+
+    def _apply_searching_ordering(self, result, decoded, method_meta: MethodMeta):
+        searching_handler = method_meta.searching_handler
+        if searching_handler is not None:
+            result = self._apply_modifier_to_items(
+                result,
+                lambda items: searching_handler.search(items, decoded),
+            )
+        ordering_handler = method_meta.ordering_handler
+        if ordering_handler is not None:
+            result = self._apply_modifier_to_items(
+                result,
+                lambda items: ordering_handler.order(items, decoded),
+            )
+        return result
+
+    def _apply_modifier_to_items(self, result, modifier: Callable[[Any], Any]):
+        if isinstance(result, Mapping) and "items" in result:
+            payload = dict(result)
+            payload["items"] = modifier(payload["items"])
+            return payload
+        return modifier(result)
+
+    def _is_detail_method(self, method_meta: MethodMeta) -> bool:
+        method_name = method_meta.name.replace("-", "_").upper()
+        if method_name in {"DETAIL", "GET"}:
+            return True
+        handler_name = method_meta.handler_name.replace("-", "_").upper()
+        return handler_name in {"DETAIL", "GET"}
 
     def _abort(self, context, exc: Exception) -> NoReturn:
         mapped = self.exception_mapper(exc)

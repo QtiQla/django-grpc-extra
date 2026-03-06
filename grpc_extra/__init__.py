@@ -6,6 +6,7 @@ from .decorators import (
     grpc_searching,
     grpc_service,
 )
+from .auth import GrpcAuthBase, GrpcBearerAuthBase
 from .main import GrpcExtra
 from .pagination import BasePagination, LimitOffsetPagination, PaginationError
 from .sdk import (
@@ -41,6 +42,8 @@ __all__ = [
     "grpc_ordering",
     "grpc_searching",
     "grpc_permissions",
+    "GrpcAuthBase",
+    "GrpcBearerAuthBase",
     "ModelService",
     "ModelServiceConfig",
     "AllowedEndpoints",

@@ -138,19 +138,6 @@ class ModelServiceBuilder:
             return impl(request, context)
 
         handler.__name__ = handler_name
-        if self._supports_list_extensions(endpoint):
-            searching_class = self._resolve_list_searching_class()
-            if searching_class is not None:
-                handler = grpc_searching(
-                    searching_class,
-                    search_fields=list(self.config.list_search_fields),
-                )(handler)
-            ordering_class = self._resolve_list_ordering_class()
-            if ordering_class is not None:
-                handler = grpc_ordering(
-                    ordering_class,
-                    ordering_fields=self.config.list_ordering_fields,
-                )(handler)
         if meta["pagination_supported"]:
             pagination_class = self._resolve_list_pagination_class()
             if pagination_class is not None:
@@ -164,6 +151,19 @@ class ModelServiceBuilder:
                     return impl(request, context)
 
                 handler.__name__ = handler_name
+        if self._supports_list_extensions(endpoint):
+            searching_class = self._resolve_list_searching_class()
+            if searching_class is not None:
+                handler = grpc_searching(
+                    searching_class,
+                    search_fields=list(self.config.list_search_fields),
+                )(handler)
+            ordering_class = self._resolve_list_ordering_class()
+            if ordering_class is not None:
+                handler = grpc_ordering(
+                    ordering_class,
+                    ordering_fields=self.config.list_ordering_fields,
+                )(handler)
         wrapped = grpc_method(
             name=meta["rpc_name"],
             request_schema=request_schema,
@@ -297,7 +297,7 @@ class ModelService:
         return self.data_helper.list_objects(request)
 
     def _list_unpaginated_impl(self, request, context):
-        return {"items": list(self.data_helper.list_objects(request))}
+        return {"items": self.data_helper.list_objects(request)}
 
     def _stream_list_impl(self, request, context):
         return self.data_helper.list_objects(request)

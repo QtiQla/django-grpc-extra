@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from grpc_extra.ordering import Ordering, OrderingError
-from grpc_extra.searching import Searching, SearchingError
+from grpc_extra.ordering import Ordering, OrderingError, resolve_ordering_class
+from grpc_extra.searching import Searching, SearchingError, resolve_searching_class
 
 
 class Item(BaseModel):
@@ -29,6 +29,11 @@ def test_ordering_rejects_invalid_fields():
         ordering.order([{"value": 1}], schema(ordering="name"))
 
 
+def test_resolve_ordering_class_rejects_instance_with_helpful_message():
+    with pytest.raises(OrderingError, match="list_ordering_fields"):
+        resolve_ordering_class(Ordering(["name"]))
+
+
 def test_searching_filters_list_by_terms():
     schema = Searching.build_request_schema(None)
     searching = Searching(search_fields=["name"])
@@ -45,3 +50,8 @@ def test_searching_rejects_missing_fields_on_list_item():
     searching = Searching(search_fields=["name"])
     with pytest.raises(SearchingError):
         searching.search([{"title": "x"}], schema(search="x"))
+
+
+def test_resolve_searching_class_rejects_instance_with_helpful_message():
+    with pytest.raises(SearchingError, match="list_search_fields"):
+        resolve_searching_class(Searching(["name"]))

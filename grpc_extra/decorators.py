@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Iterable
 from typing import Any, Type
 
@@ -58,12 +59,13 @@ def grpc_service(
         resolved_app_label = app_label or service_cls.__module__.split(".")[0]
         resolved_package = package or resolved_app_label
         resolved_proto_path = proto_path or f"grpc/proto/{resolved_app_label}.proto"
+        resolved_description = description or inspect.getdoc(service_cls)
         meta = ServiceMeta(
             name=service_name,
             app_label=resolved_app_label,
             package=resolved_package,
             proto_path=resolved_proto_path,
-            description=description,
+            description=resolved_description,
             factory=factory,
             permissions=resolve_permissions(permissions),
         )
@@ -98,6 +100,7 @@ def grpc_method(
 
     def decorator(method: Callable) -> Callable:
         method_name = name or to_upper_camel_case(method.__name__)
+        resolved_description = description or inspect.getdoc(method)
         searching_meta = getattr(method, GRPC_SEARCHING_META, None)
         ordering_meta = getattr(method, GRPC_ORDERING_META, None)
         pagination_class = getattr(method, GRPC_PAGINATION_META, None)
@@ -143,7 +146,7 @@ def grpc_method(
             pagination_class=pagination_class,
             ordering_handler=ordering_handler,
             searching_handler=searching_handler,
-            description=description,
+            description=resolved_description,
             client_streaming=client_streaming,
             server_streaming=server_streaming,
             permissions=(

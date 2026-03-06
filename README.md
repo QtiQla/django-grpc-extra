@@ -5,6 +5,11 @@
 - generate `.proto` files (and optionally `pb2/pb2_grpc`)
 - run a gRPC server with auto-discovery, request conversion, and optional reload/logging
 
+## Acknowledgements
+This project is inspired by:
+- [Django Ninja](https://django-ninja.rest-framework.com)
+- [django-ninja-extra](https://eadwincode.github.io/django-ninja-extra/)
+
 ## Quick Start (5 minutes)
 
 1. Install the package:
@@ -478,7 +483,3 @@ GRPC_EXTRA = {
 }
 ```
 
-## Acknowledgements
-This project is inspired by:
-- [Django Ninja](https://django-ninja.rest-framework.com)
-- [django-ninja-extra](https://eadwincode.github.io/django-ninja-extra/)

@@ -201,6 +201,27 @@ def test_model_service_list_can_disable_pagination():
     assert "ListSchema" in list_meta.response_schema.__name__
 
 
+def test_model_service_list_without_pagination_keeps_ordering_and_searching():
+    @grpc_service(app_label="example_app", package="example_app")
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[AllowedEndpoints.LIST],
+            list_schema=ExampleOut,
+            list_pagination_class=None,
+            list_ordering_class="grpc_extra.ordering.Ordering",
+            list_ordering_fields=["name"],
+            list_searching_class="grpc_extra.searching.Searching",
+            list_search_fields=["name"],
+        )
+
+    list_meta = getattr(ExampleService.list, GRPC_METHOD_META)
+    assert list_meta.pagination_class is None
+    assert list_meta.request_schema is not None
+    assert "ordering" in list_meta.request_schema.model_fields
+    assert "search" in list_meta.request_schema.model_fields
+
+
 def test_model_service_requires_valid_config_and_helper():
     with pytest.raises(TypeError):
 
@@ -253,3 +274,13 @@ def test_model_service_can_attach_permissions_to_generated_methods():
 
     detail_meta = getattr(ExampleService.detail, GRPC_METHOD_META)
     assert len(detail_meta.permissions) == 1
+
+
+def test_model_service_config_accepts_legacy_list_searching_fields_alias():
+    config = ModelServiceConfig(
+        model=ExampleModel,
+        allowed_endpoints=[AllowedEndpoints.LIST],
+        list_schema=ExampleOut,
+        list_searching_fields=["name"],
+    )
+    assert config.list_search_fields == ["name"]

@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from types import UnionType
-from typing import Iterable, Union, cast, get_args, get_origin
+from typing import Any, Iterable, Union, cast, get_args, get_origin
 from uuid import UUID
 
 from django.apps import apps
@@ -30,6 +30,7 @@ class FieldSpec:
     type_name: str
     repeated: bool = False
     optional: bool = False
+    description: str | None = None
 
 
 class ProtoTypeError(CommandError):
@@ -41,6 +42,7 @@ class ProtoBuilder:
         self.package = package
         self.imports: set[str] = set()
         self.messages: dict[str, list[FieldSpec]] = {}
+        self.message_descriptions: dict[str, str] = {}
         self._message_models: dict[str, type[BaseModel]] = {}
         self.enums: dict[str, list[str]] = {}
 
@@ -50,21 +52,22 @@ class ProtoBuilder:
         message_name = name or model.__name__
         existing_model = self._message_models.get(message_name)
         if existing_model is not None and existing_model is not model:
-            raise ProtoTypeError(
-                f"Message name conflict for '{message_name}': "
-                f"'{existing_model.__name__}' vs '{model.__name__}'."
-            )
+            if not self._is_same_message_shape(existing_model, model):
+                raise ProtoTypeError(
+                    f"Message name conflict for '{message_name}': "
+                    f"'{existing_model.__name__}' vs '{model.__name__}'."
+                )
+            return message_name
         self._message_models[message_name] = model
+        model_doc = getattr(model, "__doc__", None)
+        if model_doc:
+            self.message_descriptions[message_name] = str(model_doc).strip()
         if message_name in self.messages:
             return message_name
         fields: list[FieldSpec] = []
         field_number = 1
         for field_name, field in model.model_fields.items():
             type_name, repeated, optional = self._proto_type(field.annotation)
-            if optional and repeated:
-                raise ProtoTypeError(
-                    f"Field '{field_name}' in '{model.__name__}' cannot be Optional[List[T]]."
-                )
             field_alias = field.alias or field_name
             fields.append(
                 FieldSpec(
@@ -73,11 +76,27 @@ class ProtoBuilder:
                     type_name=type_name,
                     repeated=repeated,
                     optional=optional,
+                    description=field.description or field.title,
                 )
             )
             field_number += 1
         self.messages[message_name] = fields
         return message_name
+
+    def _is_same_message_shape(
+        self, left_model: type[BaseModel], right_model: type[BaseModel]
+    ) -> bool:
+        return self._message_shape_signature(
+            left_model
+        ) == self._message_shape_signature(right_model)
+
+    def _message_shape_signature(
+        self, model: type[BaseModel]
+    ) -> tuple[tuple[str, Any, str], ...]:
+        signature: list[tuple[str, Any, str]] = []
+        for field_name, field in model.model_fields.items():
+            signature.append((field_name, field.annotation, field.alias or field_name))
+        return tuple(signature)
 
     def register_enum(self, enum_cls: type[Enum]) -> None:
         if enum_cls.__name__ in self.enums:
@@ -103,7 +122,7 @@ class ProtoBuilder:
             non_none = [arg for arg in args if arg is not type(None)]
             if len(non_none) == 1:
                 type_name, repeated, _ = self._proto_type(non_none[0])
-                return type_name, repeated, True
+                return type_name, repeated, not repeated
             raise ProtoTypeError("Union types are not supported in proto generation.")
 
         if isinstance(annotation, type):
@@ -284,7 +303,10 @@ class Command(BaseCommand):
         service_blocks = [self._render_service(defn, builder) for defn in service_defs]
         imports = self._render_imports(builder.imports)
         enums = self._render_enums(builder.enums)
-        messages = self._render_messages(builder.messages)
+        messages = self._render_messages(
+            builder.messages,
+            builder.message_descriptions,
+        )
 
         parts = [
             'syntax = "proto3";',
@@ -324,15 +346,30 @@ class Command(BaseCommand):
             blocks.append("\n".join(lines))
         return "\n\n".join(blocks) + "\n"
 
-    def _render_messages(self, messages: dict[str, list[FieldSpec]]) -> str:
+    def _render_messages(
+        self,
+        messages: dict[str, list[FieldSpec]],
+        message_descriptions: dict[str, str] | None = None,
+    ) -> str:
         if not messages:
             return ""
+        message_descriptions = message_descriptions or {}
         blocks = []
         for name, fields in messages.items():
             lines = [f"message {name} {{"]
+            message_comment = self._render_comment(
+                message_descriptions.get(name),
+            )
+            if message_comment:
+                lines = [message_comment, *lines]
             for field in fields:
                 repeated = "repeated " if field.repeated else ""
                 optional = "optional " if field.optional and not field.repeated else ""
+                field_comment = self._render_comment(
+                    getattr(field, "description", None), indent="  "
+                )
+                if field_comment:
+                    lines.append(field_comment)
                 lines.append(
                     f"  {optional}{repeated}{field.type_name} {field.name} = {field.number};"
                 )
@@ -344,25 +381,45 @@ class Command(BaseCommand):
         self, definition: ServiceDefinition, builder: ProtoBuilder
     ) -> str:
         lines = [f"service {definition.meta.name} {{"]
+        service_comment = self._render_comment(definition.meta.description)
+        if service_comment:
+            lines = [service_comment, *lines]
         methods = definition.methods or self._fallback_methods(definition.service)
         for method in methods:
             request = self._message_name(
                 method.request_schema,
                 builder,
                 kind="request",
+                service_name=definition.meta.name,
+                method_name=method.name,
             )
             response = self._message_name(
                 method.response_schema,
                 builder,
                 kind="response",
+                service_name=definition.meta.name,
+                method_name=method.name,
             )
             req_stream = "stream " if method.client_streaming else ""
             res_stream = "stream " if method.server_streaming else ""
+            method_comment = self._render_comment(method.description, indent="  ")
+            if method_comment:
+                lines.append(method_comment)
             lines.append(
                 f"  rpc {method.name} ({req_stream}{request}) returns ({res_stream}{response});"
             )
         lines.append("}")
         return "\n".join(lines)
+
+    def _render_comment(self, text: str | None, *, indent: str = "") -> str:
+        if not text:
+            return ""
+        lines = [
+            line.strip() for line in str(text).strip().splitlines() if line.strip()
+        ]
+        if not lines:
+            return ""
+        return "\n".join(f"{indent}// {line}" for line in lines)
 
     def _message_name(
         self,
@@ -370,17 +427,19 @@ class Command(BaseCommand):
         builder: ProtoBuilder,
         *,
         kind: str,
+        service_name: str,
+        method_name: str,
     ) -> str:
         if schema is None:
             builder.imports.add("google/protobuf/empty.proto")
             return "google.protobuf.Empty"
         if kind not in {"request", "response"}:
             raise ProtoTypeError(f"Unknown schema kind '{kind}'.")
-        base = self._schema_base_name(schema.__name__)
         suffix = (
             self._request_suffix() if kind == "request" else self._response_suffix()
         )
-        message_name = f"{base}{suffix}"
+        base = f"{service_name}{method_name}"
+        message_name = f"{base}{suffix}" if suffix else base
         return builder.register_message(schema, name=message_name)
 
     def _schema_base_name(self, schema_name: str) -> str:
@@ -398,6 +457,7 @@ class Command(BaseCommand):
         self, app_path: str, proto_files: Iterable[Path], *, pyi: bool
     ) -> int:
         try:
+            import grpc_tools
             from grpc_tools import protoc
         except ImportError as exc:
             raise CommandError(
@@ -406,14 +466,21 @@ class Command(BaseCommand):
             ) from exc
 
         app_root = Path(app_path).parent
+        grpc_tools_include = self._grpc_tools_include_path(grpc_tools)
         compiled = 0
         for proto_file in proto_files:
             args = [
                 "protoc",
                 f"-I{app_root}",
-                f"--python_out={app_root}",
-                f"--grpc_python_out={app_root}",
             ]
+            if grpc_tools_include is not None:
+                args.append(f"-I{grpc_tools_include}")
+            args.extend(
+                [
+                    f"--python_out={app_root}",
+                    f"--grpc_python_out={app_root}",
+                ]
+            )
             if pyi:
                 args.append(f"--pyi_out={app_root}")
             args.append(str(proto_file))
@@ -422,3 +489,12 @@ class Command(BaseCommand):
                 raise CommandError(f"protoc failed for {proto_file}")
             compiled += 1
         return compiled
+
+    def _grpc_tools_include_path(self, grpc_tools_module: object) -> Path | None:
+        module_file = getattr(grpc_tools_module, "__file__", None)
+        if not module_file:
+            return None
+        include_path = Path(module_file).resolve().parent / "_proto"
+        if include_path.exists():
+            return include_path
+        return None

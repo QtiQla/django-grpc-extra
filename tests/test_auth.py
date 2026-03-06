@@ -5,7 +5,13 @@ from types import SimpleNamespace
 import grpc
 import pytest
 
-from grpc_extra.auth import AuthError, AuthInterceptor, resolve_auth_backend
+from grpc_extra.auth import (
+    AuthError,
+    AuthInterceptor,
+    GrpcAuthBase,
+    GrpcBearerAuthBase,
+    resolve_auth_backend,
+)
 
 
 class DummyContext:
@@ -15,6 +21,15 @@ class DummyContext:
     def abort(self, code, message):
         self.aborted = (code, message)
         raise RuntimeError("aborted")
+
+
+class DummyMetadataContext(DummyContext):
+    def __init__(self, metadata):
+        super().__init__()
+        self._metadata = metadata
+
+    def invocation_metadata(self):
+        return self._metadata
 
 
 class DummyDetails:
@@ -49,16 +64,91 @@ def test_resolve_auth_backend_variants():
     def fn(*_args):
         return True
 
+    class BackendClass:
+        def __call__(self, *_args):
+            return True
+
     assert resolve_auth_backend(None) is None
     assert resolve_auth_backend(fn) is fn
+    assert callable(resolve_auth_backend(BackendClass))
     assert resolve_auth_backend("grpc_extra.auth.resolve_auth_backend")
+    assert callable(resolve_auth_backend("tests.test_auth.ResolverBackendClass"))
 
 
 def test_resolve_auth_backend_errors():
+    class BadBackendClass:
+        def __init__(self, required):
+            self.required = required
+
+        def __call__(self, *_args):
+            return True
+
     with pytest.raises(AuthError):
         resolve_auth_backend("bad-path")
     with pytest.raises(AuthError):
         resolve_auth_backend("grpc_extra.auth.__name__")
+    with pytest.raises(AuthError):
+        resolve_auth_backend(BadBackendClass)
+
+
+class ResolverBackendClass:
+    def __call__(self, *_args):
+        return True
+
+
+def test_grpc_auth_base_calls_authenticate():
+    class SampleAuth(GrpcAuthBase):
+        def authenticate(self, context, method: str, request=None):
+            return {"context": context, "method": method, "request": request}
+
+    backend = SampleAuth()
+    result = backend("ctx", "/svc/method", {"k": "v"})
+    assert result == {"context": "ctx", "method": "/svc/method", "request": {"k": "v"}}
+
+
+def test_grpc_bearer_auth_base_extracts_and_authenticates():
+    class SampleBearer(GrpcBearerAuthBase):
+        def authenticate(self, context, token: str, method: str, request=None):
+            return (context, token, method, request)
+
+    backend = SampleBearer()
+    context = DummyMetadataContext([("authorization", "Bearer abc.def")])
+    result = backend(context, "/svc/method", {"x": 1})
+    assert result == (context, "abc.def", "/svc/method", {"x": 1})
+
+
+def test_grpc_bearer_auth_base_returns_none_without_token():
+    class SampleBearer(GrpcBearerAuthBase):
+        def authenticate(self, context, token: str, method: str, request=None):
+            return token
+
+    backend = SampleBearer()
+    assert backend(DummyMetadataContext([]), "/svc/method", None) is None
+    assert (
+        backend(
+            DummyMetadataContext([("authorization", "Basic abc")]), "/svc/method", None
+        )
+        is None
+    )
+    assert (
+        backend(
+            DummyMetadataContext([("authorization", "Bearer")]), "/svc/method", None
+        )
+        is None
+    )
+
+
+def test_grpc_bearer_auth_base_supports_custom_header():
+    class ApiKeyBearer(GrpcBearerAuthBase):
+        header = "x-api-key"
+        scheme = "token"
+
+        def authenticate(self, context, token: str, method: str, request=None):
+            return token
+
+    backend = ApiKeyBearer()
+    context = DummyMetadataContext([("x-api-key", "Token custom-key")])
+    assert backend(context, "/svc/method", None) == "custom-key"
 
 
 @pytest.mark.parametrize(
@@ -81,6 +171,17 @@ def test_auth_interceptor_wraps_all_handler_types(kind, factory):
 
 def test_auth_interceptor_aborts_when_backend_returns_false():
     interceptor = AuthInterceptor(lambda *_args: False)
+    wrapped = interceptor.intercept_service(
+        lambda _details: _make_handler("unary_unary"), DummyDetails()
+    )
+    context = DummyContext()
+    with pytest.raises(RuntimeError):
+        wrapped.unary_unary({}, context)
+    assert context.aborted == (grpc.StatusCode.UNAUTHENTICATED, "Unauthorized")
+
+
+def test_auth_interceptor_aborts_when_backend_returns_none():
+    interceptor = AuthInterceptor(lambda *_args: None)
     wrapped = interceptor.intercept_service(
         lambda _details: _make_handler("unary_unary"), DummyDetails()
     )

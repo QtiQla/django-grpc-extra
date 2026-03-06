@@ -61,8 +61,10 @@ class FakeManager:
     def __init__(self, instance):
         self.instance = instance
         self.created_payload = None
+        self.all_calls = 0
 
     def all(self):
+        self.all_calls += 1
         return FakeQuerySet(self.instance)
 
     def create(self, **kwargs):
@@ -88,12 +90,19 @@ class AdvancedListFilter(ModelFilterSchema):
     )
 
 
-def _helper(list_filter: type[BaseModel] | None = None) -> DefaultModelDataHelper:
+def _helper(
+    list_filter: type[BaseModel] | None = None,
+    *,
+    queryset: object | None = None,
+    detail_queryset: object | None = None,
+) -> DefaultModelDataHelper:
     FakeModel.objects = FakeManager(FakeInstance(id=1, name="old"))
     config = ModelServiceConfig(
         model=FakeModel,
         allowed_endpoints=[],
         list_filter=list_filter,
+        queryset=queryset,
+        detail_queryset=detail_queryset,
     )
     return DefaultModelDataHelper(config)
 
@@ -132,3 +141,38 @@ def test_list_objects_applies_model_filter_schema():
     request = SimpleNamespace(ids=[1, 2], limit=10, offset=0)
     queryset = helper.list_objects(request)
     assert queryset.filter_args
+
+
+def test_get_queryset_uses_custom_queryset_object():
+    custom_queryset = FakeQuerySet(FakeInstance(id=10, name="custom"))
+    helper = _helper(queryset=custom_queryset)
+
+    queryset = helper.get_queryset()
+    assert queryset is custom_queryset
+    assert FakeModel.objects.all_calls == 0
+
+
+def test_get_queryset_uses_custom_queryset_factory():
+    custom_queryset = FakeQuerySet(FakeInstance(id=10, name="custom"))
+    helper = _helper(queryset=lambda: custom_queryset)
+
+    queryset = helper.get_queryset()
+    assert queryset is custom_queryset
+    assert FakeModel.objects.all_calls == 0
+
+
+def test_get_object_uses_detail_queryset_when_provided():
+    list_queryset = FakeQuerySet(FakeInstance(id=1, name="list"))
+    detail_queryset = FakeQuerySet(FakeInstance(id=1, name="detail"))
+    helper = _helper(queryset=list_queryset, detail_queryset=detail_queryset)
+
+    obj = helper.get_object(SimpleNamespace(id=1))
+    assert obj.name == "detail"
+
+
+def test_get_detail_queryset_falls_back_to_general_queryset():
+    list_queryset = FakeQuerySet(FakeInstance(id=1, name="list"))
+    helper = _helper(queryset=list_queryset)
+
+    queryset = helper.get_detail_queryset()
+    assert queryset is list_queryset

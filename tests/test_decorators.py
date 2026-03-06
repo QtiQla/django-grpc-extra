@@ -173,6 +173,24 @@ def test_permissions_are_declared_on_service_and_method():
     assert len(method_meta.permissions) == 1
 
 
+def test_descriptions_fallback_to_docstrings():
+    @grpc_service(app_label="example")
+    class UserService:
+        """Service docstring."""
+
+        @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+        def get_profile(self, request, context):
+            """Method docstring."""
+            return {"value": request.value}
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "get_profile"
+    )
+    assert definition.meta.description == "Service docstring."
+    assert method_meta.description == "Method docstring."
+
+
 def test_grpc_permissions_requires_position_under_grpc_method():
     with pytest.raises(ValueError):
 

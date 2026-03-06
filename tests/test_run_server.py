@@ -26,6 +26,9 @@ class DummyServer:
     def wait_for_termination(self):
         self.waited = True
 
+    def stop(self, grace):
+        self.stopped = grace
+
 
 class DummyGrpcModule:
     class ServerInterceptor:
@@ -160,3 +163,29 @@ def test_run_server_uses_watchfiles_for_reload(monkeypatch):
 
     assert calls.paths == ("app",)
     assert callable(calls.target)
+
+
+def test_run_server_handles_keyboard_interrupt_on_wait(monkeypatch):
+    class InterruptServer(DummyServer):
+        def wait_for_termination(self):
+            raise KeyboardInterrupt()
+
+    class InterruptGrpcModule(DummyGrpcModule):
+        def server(self, *args, **kwargs):
+            server = InterruptServer(*args, **kwargs)
+            self.created.append(server)
+            return server
+
+    dummy_grpc = InterruptGrpcModule()
+    monkeypatch.setitem(sys.modules, "grpc", dummy_grpc)
+    GrpcExtra = _load_grpc_extra(dummy_grpc)
+    _configure_settings(ENABLE_RELOAD=False)
+
+    registry.clear()
+    extra = GrpcExtra()
+    monkeypatch.setattr(extra, "apply", lambda server: [])
+
+    extra.run_server(auto_discover=False)
+
+    server = dummy_grpc.created[0]
+    assert getattr(server, "stopped", None) == 0
