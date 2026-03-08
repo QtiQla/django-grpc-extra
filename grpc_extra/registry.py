@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING, Callable, Iterable
 from .constants import GRPC_METHOD_META, GRPC_SERVICE_META
 
 if TYPE_CHECKING:
-    from .ordering import BaseOrdering
     from pydantic import BaseModel
 
+    from .ordering import BaseOrdering
+    from .permissions import BasePermission
     from .pagination import BasePagination
     from .searching import BaseSearching
 
@@ -29,6 +30,7 @@ class ServiceMeta:
     proto_path: str | None = None
     description: str | None = None
     factory: Callable[[], object] | None = None
+    permissions: tuple["BasePermission", ...] = ()
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class MethodMeta:
     description: str | None = None
     client_streaming: bool = False
     server_streaming: bool = False
+    permissions: tuple["BasePermission", ...] = ()
 
 
 @dataclass

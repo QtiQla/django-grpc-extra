@@ -33,6 +33,9 @@ class SearchingError(Exception):
 
 
 class BaseSearching:
+    fields_param_name: str = "search_fields"
+    fields_required: bool = True
+
     @classmethod
     def build_request_schema(
         cls, request_schema: type[BaseModel] | None
@@ -101,7 +104,9 @@ class Searching(BaseSearching):
         return LOOKUP_SEP.join([field_name, lookup])
 
     def _conditions_for_queryset(self, terms: list[str]) -> list[Q]:
-        orm_lookups = [self._construct_search_lookup(field) for field in self.search_fields]
+        orm_lookups = [
+            self._construct_search_lookup(field) for field in self.search_fields
+        ]
         conditions: list[Q] = []
         for term in terms:
             queries = [Q(**{lookup: term}) for lookup in orm_lookups]
@@ -139,7 +144,9 @@ class Searching(BaseSearching):
             term_match = False
             for field_name, lookup in lookups.items():
                 try:
-                    raw_value = item[field_name] if is_dict else getattr(item, field_name)
+                    raw_value = (
+                        item[field_name] if is_dict else getattr(item, field_name)
+                    )
                 except Exception as exc:
                     raise SearchingError(
                         f"Search field '{field_name}' is not available on list items."
@@ -156,6 +163,12 @@ class Searching(BaseSearching):
 def resolve_searching_class(value: object | None) -> type[BaseSearching] | None:
     if value is None:
         return None
+    if isinstance(value, BaseSearching):
+        raise SearchingError(
+            "Searching instance is not supported here. "
+            "Pass searching class (e.g. Searching) to `list_searching_class` and "
+            "pass fields via `list_search_fields`."
+        )
     if isinstance(value, str):
         module_path, _, attr = value.rpartition(".")
         if not module_path or not attr:

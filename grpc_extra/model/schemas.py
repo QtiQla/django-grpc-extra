@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Self, Type
+from enum import Enum
+from typing import Callable, Type
 
 from django.db.models import Model
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+from typing_extensions import Self
 
 
-class AllowedEndpoints(StrEnum):
+class StringEnum(str, Enum):
+    """Python 3.10+ compatible string enum base."""
+
+
+class AllowedEndpoints(StringEnum):
     STREAM_LIST = "stream_list"
     CREATE = "create"
     DETAIL = "detail"
@@ -39,11 +44,20 @@ class ModelServiceConfig(BaseModel):
     update_schema: Type[BaseModel] | None = None
     patch_schema: Type[BaseModel] | None = None
     lookup_field: str = "id"
+    queryset: object | Callable[[], object] | None = None
+    detail_queryset: object | Callable[[], object] | None = None
     list_pagination_class: object | None = "default"
     list_ordering_class: object | None = None
     list_ordering_fields: list[str] | str = "__all__"
     list_searching_class: object | None = None
-    list_search_fields: list[str] = Field(default_factory=list)
+    list_search_fields: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("list_search_fields", "list_searching_fields"),
+    )
+    permissions: list[object] = Field(default_factory=list)
+    endpoint_permissions: dict[AllowedEndpoints, list[object]] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def validate_exists_schemas_by_allowed_endpoints(self) -> Self:

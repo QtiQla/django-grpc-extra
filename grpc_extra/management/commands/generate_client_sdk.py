@@ -92,7 +92,9 @@ class Command(BaseCommand):
         if not proto_files:
             raise CommandError("No proto files found for selected apps.")
 
-        include_root = self._include_root(app_configs)
+        include_root = self._include_root(
+            self._service_app_configs(definitions, app_by_label)
+        )
         generator = self._resolve_generator(language)
         try:
             target = generator.generate(
@@ -134,13 +136,35 @@ class Command(BaseCommand):
             )
         return roots.pop()
 
+    def _service_app_configs(
+        self,
+        definitions: Iterable[ServiceDefinition],
+        app_by_label: dict[str, AppConfig],
+    ) -> list[AppConfig]:
+        selected: list[AppConfig] = []
+        seen: set[str] = set()
+        for definition in definitions:
+            if not definition.meta.proto_path:
+                continue
+            label = definition.meta.app_label
+            if label in seen:
+                continue
+            app_conf = app_by_label.get(label)
+            if app_conf is None:
+                continue
+            selected.append(app_conf)
+            seen.add(label)
+        return selected
+
     def _resolve_generator(self, language: str) -> BaseClientSDKGenerator:
         configured = getattr(django_settings, "GRPC_EXTRA", {}) or {}
         mapping = dict(DEFAULT_SDK_GENERATORS)
         mapping.update(configured.get("SDK_GENERATORS", {}))
         path = mapping.get(language)
         if not path:
-            raise CommandError(f"SDK generator is not configured for language '{language}'.")
+            raise CommandError(
+                f"SDK generator is not configured for language '{language}'."
+            )
         value = import_string(path)
         instance = value() if isinstance(value, type) else value
         if not isinstance(instance, BaseClientSDKGenerator):

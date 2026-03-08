@@ -17,7 +17,7 @@ class GrpcExtraSettings:
     enable_reflection: bool = False
     auth_backend: str | Callable | None = None
     interceptors: Iterable[object] = field(default_factory=list)
-    exception_mapper: Callable[[Exception], MappedError] | None = None
+    exception_mapper: Callable[[Exception], MappedError] | str | None = None
     enable_request_logging: bool = True
     logger_name: str = "grpc_extra"
     default_pagination_class: object | None = (

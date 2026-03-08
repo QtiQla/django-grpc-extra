@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 import sys
 from types import ModuleType
@@ -24,6 +25,14 @@ class ItemSchema(BaseModel):
 
 class AttrSchema(BaseModel):
     value: int
+
+
+class DecimalSchema(BaseModel):
+    value: Decimal
+
+
+class ItemsSchema(BaseModel):
+    items: list[ItemSchema]
 
 
 class FakePb2:
@@ -60,6 +69,14 @@ class CodecModel(models.Model):
 class AttrObj:
     def __init__(self, value: int):
         self.value = value
+
+
+class StrictStringPb2:
+    def __init__(self, **kwargs):
+        value = kwargs.get("value")
+        if not isinstance(value, str):
+            raise TypeError("value must be string")
+        self.payload = kwargs
 
 
 def test_decode_request_value_to_pydantic():
@@ -146,3 +163,31 @@ def test_encode_response_value_from_django_model_instance():
 def test_encode_response_value_from_generic_object_attributes():
     encoded = encode_response_value(AttrObj(13), AttrSchema, FakePb2)
     assert encoded.payload["value"] == 13
+
+
+def test_encode_response_coerces_decimal_values_to_string():
+    encoded = encode_response_value(
+        {"value": Decimal("51.5074")},
+        DecimalSchema,
+        StrictStringPb2,
+    )
+    assert encoded.payload["value"] == "51.5074"
+
+
+def test_encode_response_wraps_iterable_for_items_wrapper_schema():
+    encoded = encode_response_value(
+        [{"value": 1}, {"value": 2}],
+        ItemsSchema,
+        FakePb2,
+    )
+    assert encoded.payload["items"] == [{"value": 1}, {"value": 2}]
+
+
+def test_encode_response_wraps_iterator_container_for_items_wrapper_schema():
+    queryset = IteratorContainer([{"value": 3}, {"value": 4}])
+    encoded = encode_response_value(
+        queryset,
+        ItemsSchema,
+        FakePb2,
+    )
+    assert encoded.payload["items"] == [{"value": 3}, {"value": 4}]

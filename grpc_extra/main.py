@@ -219,7 +219,12 @@ class GrpcExtra:
         server.add_insecure_port(bind)
         server.start()
         logger.info("grpc server started bind=%s", bind)
-        server.wait_for_termination()
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            # Reload workers are stopped via signal; avoid noisy tracebacks.
+            logger.debug("grpc server termination requested")
+            server.stop(grace=0)
 
     def _run_with_reload(
         self,

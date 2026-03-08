@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from django.core.management.base import CommandError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, create_model
 
 from grpc_extra.management.commands.generate_proto import (
     Command,
@@ -18,6 +18,8 @@ from grpc_extra.registry import MethodMeta, ServiceDefinition, ServiceMeta
 
 
 class PingSchema(BaseModel):
+    """Ping schema doc."""
+
     message: str
 
 
@@ -29,6 +31,7 @@ def _definition() -> ServiceDefinition:
             app_label="example_app",
             package="example_app",
             proto_path="grpc/proto/example_app.proto",
+            description="Service description",
         ),
         methods=[
             MethodMeta(
@@ -36,6 +39,7 @@ def _definition() -> ServiceDefinition:
                 handler_name="ping",
                 request_schema=PingSchema,
                 response_schema=PingSchema,
+                description="Method description",
             )
         ],
     )
@@ -46,7 +50,13 @@ def test_package_from_and_invalid_kind():
     assert cmd._package_from([_definition()]) == "example_app"
     builder = ProtoBuilder("example_app")
     with pytest.raises(ProtoTypeError):
-        cmd._message_name(PingSchema, builder, kind="wrong")
+        cmd._message_name(
+            PingSchema,
+            builder,
+            kind="wrong",
+            service_name="ExampleService",
+            method_name="Ping",
+        )
 
 
 def test_render_helpers_and_schema_base_name():
@@ -87,6 +97,8 @@ def test_compile_protos_uses_grpc_tools(monkeypatch, tmp_path):
     proto.write_text('syntax = "proto3";', encoding="utf-8")
 
     calls = []
+    fake_grpc_tools_dir = tmp_path / "fake_grpc_tools"
+    (fake_grpc_tools_dir / "_proto").mkdir(parents=True)
 
     class DummyProtoc:
         @staticmethod
@@ -95,11 +107,18 @@ def test_compile_protos_uses_grpc_tools(monkeypatch, tmp_path):
             return 0
 
     monkeypatch.setitem(
-        __import__("sys").modules, "grpc_tools", SimpleNamespace(protoc=DummyProtoc)
+        __import__("sys").modules,
+        "grpc_tools",
+        SimpleNamespace(
+            protoc=DummyProtoc, __file__=str(fake_grpc_tools_dir / "__init__.py")
+        ),
     )
     compiled = cmd._compile_protos(str(proto.parent.parent.parent), [proto], pyi=True)
     assert compiled == 1
     assert "--pyi_out=" in " ".join(calls[0])
+    assert any(
+        arg.startswith(f"-I{fake_grpc_tools_dir / '_proto'}") for arg in calls[0]
+    )
 
 
 def test_compile_protos_raises_on_failure(monkeypatch, tmp_path):
@@ -165,8 +184,34 @@ def test_package_resolution_variants():
 def test_message_name_for_none_schema_adds_empty_import():
     cmd = Command()
     builder = ProtoBuilder("x")
-    assert cmd._message_name(None, builder, kind="request") == "google.protobuf.Empty"
+    assert (
+        cmd._message_name(
+            None,
+            builder,
+            kind="request",
+            service_name="ExampleService",
+            method_name="List",
+        )
+        == "google.protobuf.Empty"
+    )
     assert "google/protobuf/empty.proto" in builder.imports
+
+
+def test_message_name_uses_service_method_naming():
+    cmd = Command()
+    builder = ProtoBuilder("x")
+
+    RequestSchema = type("OrderingRequest", (BaseModel,), {"__annotations__": {}})
+    assert (
+        cmd._message_name(
+            RequestSchema,
+            builder,
+            kind="request",
+            service_name="CustomerService",
+            method_name="List",
+        )
+        == "CustomerServiceListRequest"
+    )
 
 
 def test_handle_errors_for_conflicting_flags_and_missing_definitions(monkeypatch):
@@ -256,9 +301,54 @@ def test_proto_builder_message_conflict():
         value: int
 
     class B(BaseModel):
-        value: int
+        value: str
 
     builder = ProtoBuilder("example")
     builder.register_message(A, name="Shared")
     with pytest.raises(ProtoTypeError):
         builder.register_message(B, name="Shared")
+
+
+def test_proto_builder_reuses_message_name_for_identical_models():
+    builder = ProtoBuilder("example")
+    model_a = create_model("OrderingRequest", ordering=(str | None, None))
+    model_b = create_model("OrderingRequest", ordering=(str | None, None))
+
+    assert (
+        builder.register_message(model_a, name="OrderingRequest") == "OrderingRequest"
+    )
+    assert (
+        builder.register_message(model_b, name="OrderingRequest") == "OrderingRequest"
+    )
+
+
+def test_build_proto_includes_descriptions_in_comments():
+    class DescribedSchema(BaseModel):
+        """Schema description."""
+
+        title: str = Field(description="Field description")
+
+    definition = ServiceDefinition(
+        service=object,
+        meta=ServiceMeta(
+            name="DocService",
+            app_label="example",
+            package="example",
+            proto_path="grpc/proto/example.proto",
+            description="Service comment",
+        ),
+        methods=[
+            MethodMeta(
+                name="Ping",
+                handler_name="ping",
+                request_schema=DescribedSchema,
+                response_schema=DescribedSchema,
+                description="RPC comment",
+            )
+        ],
+    )
+    content = Command()._build_proto([definition])
+    assert "// Service comment" in content
+    assert "// RPC comment" in content
+    assert "// Schema description." in content
+    assert "// Field description" in content

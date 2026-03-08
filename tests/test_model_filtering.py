@@ -7,12 +7,16 @@ from grpc_extra.model.filtering import ModelFilterSchema
 
 class ExampleFilter(ModelFilterSchema):
     name: str | None = None
-    ids: list[int] | None = Field(default=None, json_schema_extra={"op": "in", "field": "id"})
+    ids: list[int] | None = Field(
+        default=None, json_schema_extra={"op": "in", "field": "id"}
+    )
     blocked_ids: list[int] | None = Field(
         default=None,
         json_schema_extra={"op": "not_in", "field": "id"},
     )
-    min_age: int | None = Field(default=None, json_schema_extra={"op": "gte", "field": "age"})
+    min_age: int | None = Field(
+        default=None, json_schema_extra={"op": "gte", "field": "age"}
+    )
 
 
 class FakeQuerySet:

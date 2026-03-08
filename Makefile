@@ -13,20 +13,13 @@ clean: ## Removing cached python compiled files
 	find . -type d -name "__pycache__" -not -path "./.venv/*" -prune -exec rm -rf {} +
 	rm -rf .mypy_cache .pytest_cache .coverage htmlcov
 
-install-linters: ## Install dependencies for linters
-	make clean
-	pip install ruff
-	pip install mypy
-	pip install pre-commit
-	pip install django-stubs
-	pip install django-stubs-ext
-	pip install types-python-dateutil
+install:clean ## Install dependencies
+	pip install -r requirements.txt
+	flit install --symlink
 
-install-test: ## Install dependencies for tests
-	make clean
-	pip install pytest
-	pip install pytest-cov
-	pip install pytest-django
+
+install-full:install ## Install dependencies
+	pre-commit install -f
 
 format: ## Run code formatters
 	make clean
@@ -38,29 +31,15 @@ lint: ## Run code linters
 	ruff check grpc_extra tests
 	mypy grpc_extra
 
-docs-serve: ## Serve documentation locally
+doc-deploy:clean ## Run Deploy Documentation
+	mkdocs gh-deploy --force
+
+doc-serve: ## Launch doc local server
 	mkdocs serve
 
-docs-build: ## Build documentation
-	mkdocs build
+test:clean ## Run tests
+	pytest tests
 
-docs-deploy: ## Deploy documentation to GitHub Pages
-	mkdocs gh-deploy
-	isort --check grpc_extra
-	flake8 grpc_extra
-	make mypy
+test-cov:clean ## Run tests with coverage
+	pytest --cov=grpc_extra --cov-report term-missing tests
 
-test: ## Run tests
-	make clean
-	pytest tests --reuse-db
-
-test-fresh: ## Run tests with fresh database
-	make clean
-	pytest tests --create-db
-
-test-cov: ## Run tests with coverage
-	make clean
-	pytest --cov=grpc_extra --cov-report term-missing --cov-fail-under=85 tests --reuse-db
-
-check-all: ## precommit check_all
-	pre-commit run --all-files

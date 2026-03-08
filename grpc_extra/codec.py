@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, is_dataclass
-from typing import Any, cast
+from decimal import Decimal
+from typing import Any, get_args, get_origin, cast
 
 from django.db.models import Model, QuerySet
 from pydantic import BaseModel
@@ -60,25 +61,64 @@ def _normalize_response(value: Any, schema: type[BaseModel] | None) -> dict[str,
         payload = _to_payload(value)
         if not isinstance(payload, Mapping):
             raise ResponseEncodeError("Response must be mapping-compatible.")
-        return dict(payload)
+        return cast(dict[str, Any], _coerce_protobuf_compatible(dict(payload)))
+
+    if _is_repeated_items_wrapper_schema(schema) and _is_collection_payload(value):
+        validated = schema.model_validate({"items": _materialize_collection(value)})
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
 
     if isinstance(value, schema):
-        return value.model_dump(mode="python", by_alias=True, exclude_none=True)
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                value.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
     if isinstance(value, BaseModel):
         validated = schema.model_validate(value.model_dump(mode="python"))
-        return validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
     if isinstance(value, Mapping):
         validated = schema.model_validate(dict(value))
-        return validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
     if is_dataclass(value) and not isinstance(value, type):
         validated = schema.model_validate(asdict(value))
-        return validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
     if isinstance(value, Model):
         validated = schema.model_validate(value, from_attributes=True)
-        return validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
 
     validated = schema.model_validate(value, from_attributes=True)
-    return validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+    return cast(
+        dict[str, Any],
+        _coerce_protobuf_compatible(
+            validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+        ),
+    )
 
 
 def _to_payload(value: Any) -> Any:
@@ -96,3 +136,39 @@ def _to_payload(value: Any) -> Any:
             preserving_proto_field_name=True,
         )
     return value
+
+
+def _coerce_protobuf_compatible(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {k: _coerce_protobuf_compatible(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_coerce_protobuf_compatible(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_coerce_protobuf_compatible(v) for v in value)
+    return value
+
+
+def _is_repeated_items_wrapper_schema(schema: type[BaseModel]) -> bool:
+    fields = schema.model_fields
+    if tuple(fields.keys()) != ("items",):
+        return False
+    annotation = fields["items"].annotation
+    return get_origin(annotation) is list and len(get_args(annotation)) == 1
+
+
+def _is_collection_payload(value: Any) -> bool:
+    if isinstance(value, (str, bytes, bytearray, Mapping, BaseModel)):
+        return False
+    iterator = getattr(value, "iterator", None)
+    if isinstance(value, QuerySet) or callable(iterator):
+        return True
+    return isinstance(value, Iterable)
+
+
+def _materialize_collection(value: Any) -> list[Any]:
+    iterator = getattr(value, "iterator", None)
+    if isinstance(value, QuerySet) or callable(iterator):
+        return list(cast(Any, value).iterator())
+    return list(cast(Iterable[Any], value))

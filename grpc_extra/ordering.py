@@ -15,6 +15,9 @@ class OrderingError(Exception):
 
 
 class BaseOrdering:
+    fields_param_name: str = "ordering_fields"
+    fields_required: bool = True
+
     @classmethod
     def build_request_schema(
         cls, request_schema: type[BaseModel] | None
@@ -111,6 +114,12 @@ class Ordering(BaseOrdering):
 def resolve_ordering_class(value: object | None) -> type[BaseOrdering] | None:
     if value is None:
         return None
+    if isinstance(value, BaseOrdering):
+        raise OrderingError(
+            "Ordering instance is not supported here. "
+            "Pass ordering class (e.g. Ordering) to `list_ordering_class` and "
+            "pass fields via `list_ordering_fields`."
+        )
     if isinstance(value, str):
         module_path, _, attr = value.rpartition(".")
         if not module_path or not attr:

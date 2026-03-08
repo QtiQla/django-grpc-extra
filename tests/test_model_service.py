@@ -15,6 +15,7 @@ from grpc_extra import (
 from grpc_extra.constants import GRPC_METHOD_META
 from grpc_extra.model.service import ModelServiceBuilder
 from grpc_extra.pagination import LimitOffsetPagination
+from grpc_extra.permissions import IsAuthenticated
 from grpc_extra.registry import registry
 
 
@@ -39,7 +40,9 @@ class ExampleCreate(BaseModel):
 
 class ExampleListFilter(ModelFilterSchema):
     name: str | None = None
-    ids: list[int] | None = Field(default=None, json_schema_extra={"op": "in", "field": "id"})
+    ids: list[int] | None = Field(
+        default=None, json_schema_extra={"op": "in", "field": "id"}
+    )
 
 
 def setup_function():
@@ -198,6 +201,27 @@ def test_model_service_list_can_disable_pagination():
     assert "ListSchema" in list_meta.response_schema.__name__
 
 
+def test_model_service_list_without_pagination_keeps_ordering_and_searching():
+    @grpc_service(app_label="example_app", package="example_app")
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[AllowedEndpoints.LIST],
+            list_schema=ExampleOut,
+            list_pagination_class=None,
+            list_ordering_class="grpc_extra.ordering.Ordering",
+            list_ordering_fields=["name"],
+            list_searching_class="grpc_extra.searching.Searching",
+            list_search_fields=["name"],
+        )
+
+    list_meta = getattr(ExampleService.list, GRPC_METHOD_META)
+    assert list_meta.pagination_class is None
+    assert list_meta.request_schema is not None
+    assert "ordering" in list_meta.request_schema.model_fields
+    assert "search" in list_meta.request_schema.model_fields
+
+
 def test_model_service_requires_valid_config_and_helper():
     with pytest.raises(TypeError):
 
@@ -236,3 +260,27 @@ def test_model_builder_does_not_override_existing_handler():
     builder = ModelServiceBuilder(ExampleService, ExampleService.config)
     builder.build()
     assert ExampleService.list.__name__ == "list"
+
+
+def test_model_service_can_attach_permissions_to_generated_methods():
+    @grpc_service(app_label="example_app", package="example_app")
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[AllowedEndpoints.DETAIL],
+            detail_schema=ExampleOut,
+            permissions=[IsAuthenticated],
+        )
+
+    detail_meta = getattr(ExampleService.detail, GRPC_METHOD_META)
+    assert len(detail_meta.permissions) == 1
+
+
+def test_model_service_config_accepts_legacy_list_searching_fields_alias():
+    config = ModelServiceConfig(
+        model=ExampleModel,
+        allowed_endpoints=[AllowedEndpoints.LIST],
+        list_schema=ExampleOut,
+        list_searching_fields=["name"],
+    )
+    assert config.list_search_fields == ["name"]
