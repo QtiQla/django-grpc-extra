@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 from typing import Callable, Self, Type
 
 from django.db.models import Model
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
-class AllowedEndpoints(StrEnum):
+class StringEnum(str, Enum):
+    """Python 3.10+ compatible string enum base."""
+
+
+class AllowedEndpoints(StringEnum):
     STREAM_LIST = "stream_list"
     CREATE = "create"
     DETAIL = "detail"
