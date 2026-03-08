@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Callable, Self, Type
+from typing import Callable, Type
 
 from django.db.models import Model
 from pydantic import AliasChoices, BaseModel, Field, model_validator
+from typing_extensions import Self
 
 
 class StringEnum(str, Enum):
