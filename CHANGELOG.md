@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0b1] - 2026-03-08
+## [0.1.1b1] - 2026-03-08
+
+### Changed
+
+- Release version moved to beta track after initial `0.1.0` publication.
+- Added explicit runtime dependency `typing-extensions` for Python 3.10 typing compatibility.
+- Added PyPI and documentation badges to `README.md`.
+
+### Fixed
+
+- Python 3.10 compatibility:
+  - replaced `StrEnum` usage with a Python 3.10-compatible string enum base
+  - replaced `typing.Self` import with `typing_extensions.Self`
+- CI typing environment:
+  - GitHub test workflow now installs `requirements-tests.txt` before running `mypy`.
+
+## [0.1.0] - 2026-03-08
 
 First public beta release.
 
@@ -83,4 +99,3 @@ First public beta release.
 
 - This is a beta release. Some APIs may still evolve before `1.0.0`.
 - Recommended to pin exact beta version in production-like environments.
-
