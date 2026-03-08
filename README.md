@@ -1,5 +1,8 @@
 # django-grpc-extra
 
+[![PyPI version](https://img.shields.io/pypi/v/django-grpc-extra.svg)](https://pypi.org/project/django-grpc-extra/)
+[![Docs](https://img.shields.io/badge/docs-online-2ea44f)](https://qtiqla.github.io/django-grpc-extra/)
+
 `django-grpc-extra` provides a decorator-based workflow for building gRPC APIs in Django:
 - declare services and RPC methods with decorators
 - generate `.proto` files (and optionally `pb2/pb2_grpc`)
