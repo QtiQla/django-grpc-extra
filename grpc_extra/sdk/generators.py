@@ -106,20 +106,23 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
 
         service_specs = self._collect_service_specs(proto_list, include_root)
 
-        (runtime_dir / "__init__.py").write_text(
-            self._render_init(package_name, service_specs), encoding="utf-8"
-        )
-        (runtime_dir / "auth.py").write_text(self._render_auth(), encoding="utf-8")
-        (runtime_dir / "config.py").write_text(
-            self._render_config(package_name), encoding="utf-8"
-        )
-        (runtime_dir / "errors.py").write_text(self._render_errors(), encoding="utf-8")
         (runtime_dir / "services.py").write_text(
             self._render_services(service_specs), encoding="utf-8"
         )
-        (runtime_dir / "client.py").write_text(
-            self._render_client(service_specs), encoding="utf-8"
-        )
+        if not target_exists:
+            (runtime_dir / "__init__.py").write_text(
+                self._render_init(package_name, service_specs), encoding="utf-8"
+            )
+            (runtime_dir / "auth.py").write_text(self._render_auth(), encoding="utf-8")
+            (runtime_dir / "config.py").write_text(
+                self._render_config(package_name), encoding="utf-8"
+            )
+            (runtime_dir / "errors.py").write_text(
+                self._render_errors(), encoding="utf-8"
+            )
+            (runtime_dir / "client.py").write_text(
+                self._render_client(service_specs), encoding="utf-8"
+            )
 
         if not target_exists:
             (target_dir / "pyproject.toml").write_text(

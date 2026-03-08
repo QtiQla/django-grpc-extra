@@ -112,7 +112,7 @@ def test_grpc_bearer_auth_base_extracts_and_authenticates():
             return (context, token, method, request)
 
     backend = SampleBearer()
-    context = DummyMetadataContext([("authorization", "Bearer abc.def")])
+    context = DummyMetadataContext([("Authorization", "Bearer abc.def")])
     result = backend(context, "/svc/method", {"x": 1})
     assert result == (context, "abc.def", "/svc/method", {"x": 1})
 
@@ -126,22 +126,60 @@ def test_grpc_bearer_auth_base_returns_none_without_token():
     assert backend(DummyMetadataContext([]), "/svc/method", None) is None
     assert (
         backend(
-            DummyMetadataContext([("authorization", "Basic abc")]), "/svc/method", None
+            DummyMetadataContext([("Authorization", "Basic abc")]), "/svc/method", None
         )
         is None
     )
     assert (
         backend(
-            DummyMetadataContext([("authorization", "Bearer")]), "/svc/method", None
+            DummyMetadataContext([("Authorization", "Bearer")]), "/svc/method", None
         )
         is None
+    )
+
+
+def test_grpc_bearer_auth_base_is_case_insensitive_for_header_and_scheme():
+    class SampleBearer(GrpcBearerAuthBase):
+        def authenticate(self, context, token: str, method: str, request=None):
+            return token
+
+    backend = SampleBearer()
+    assert (
+        backend(
+            DummyMetadataContext([("authorization", "Bearer abc")]), "/svc/method", None
+        )
+        == "abc"
+    )
+    assert (
+        backend(
+            DummyMetadataContext([("Authorization", "bearer abc")]), "/svc/method", None
+        )
+        == "abc"
+    )
+
+
+def test_grpc_bearer_auth_base_supports_empty_scheme_raw_token():
+    class RawTokenBearer(GrpcBearerAuthBase):
+        scheme = ""
+
+        def authenticate(self, context, token: str, method: str, request=None):
+            return token
+
+    backend = RawTokenBearer()
+    assert (
+        backend(
+            DummyMetadataContext([("Authorization", "raw.jwt.token")]),
+            "/svc/method",
+            None,
+        )
+        == "raw.jwt.token"
     )
 
 
 def test_grpc_bearer_auth_base_supports_custom_header():
     class ApiKeyBearer(GrpcBearerAuthBase):
         header = "x-api-key"
-        scheme = "token"
+        scheme = "Token"
 
         def authenticate(self, context, token: str, method: str, request=None):
             return token

@@ -11,10 +11,10 @@ from grpc_extra.decorators import (
     grpc_searching,
     grpc_service,
 )
-from grpc_extra.ordering import Ordering
+from grpc_extra.ordering import BaseOrdering, Ordering
 from grpc_extra.pagination import LimitOffsetPagination
 from grpc_extra.permissions import AllowAny
-from grpc_extra.searching import Searching
+from grpc_extra.searching import BaseSearching, Searching
 from grpc_extra.registry import registry
 
 
@@ -81,6 +81,40 @@ def test_grpc_pagination_extends_method_schemas():
     assert method_meta.response_schema is not None
 
 
+def test_grpc_pagination_works_when_request_schema_is_omitted():
+    @grpc_service(app_label="example")
+    class UserService:
+        @grpc_method(response_schema=ResponseSchema)
+        @grpc_pagination(LimitOffsetPagination)
+        def list_users(self, request, context):
+            return []
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "list_users"
+    )
+    assert method_meta.request_schema is not None
+    assert "limit" in method_meta.request_schema.model_fields
+    assert "offset" in method_meta.request_schema.model_fields
+
+
+def test_grpc_pagination_works_with_top_level_list_response_schema():
+    @grpc_service(app_label="example")
+    class UserService:
+        @grpc_method(response_schema=list[ResponseSchema])
+        @grpc_pagination(LimitOffsetPagination)
+        def list_users(self, request, context):
+            return []
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "list_users"
+    )
+    assert method_meta.request_schema is not None
+    assert "limit" in method_meta.request_schema.model_fields
+    assert "offset" in method_meta.request_schema.model_fields
+
+
 def test_grpc_pagination_requires_position_under_grpc_method():
     with pytest.raises(ValueError):
 
@@ -137,6 +171,23 @@ def test_grpc_search_and_order_extend_request_schema():
     assert "limit" in method_meta.request_schema.model_fields
 
 
+def test_bare_pagination_decorator_works_without_parentheses():
+    @grpc_service(app_label="example")
+    class UserService:
+        @grpc_method(request_schema=None, response_schema=ResponseSchema)
+        @grpc_pagination
+        def list_users(self, request, context):
+            return []
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "list_users"
+    )
+    assert method_meta.pagination_class is LimitOffsetPagination
+    assert method_meta.request_schema is not None
+    assert "limit" in method_meta.request_schema.model_fields
+
+
 def test_grpc_searching_requires_position_under_grpc_method():
     with pytest.raises(ValueError):
 
@@ -145,6 +196,76 @@ def test_grpc_searching_requires_position_under_grpc_method():
             @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
             def list_users(self, request, context):
                 return []
+
+
+def test_grpc_ordering_requires_explicit_fields():
+    with pytest.raises(ValueError, match="requires fields"):
+
+        class _Service:
+            @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+            @grpc_ordering()
+            def list_users(self, request, context):
+                return []
+
+
+def test_grpc_searching_requires_explicit_fields():
+    with pytest.raises(ValueError, match="requires fields"):
+
+        class _Service:
+            @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+            @grpc_searching()
+            def list_users(self, request, context):
+                return []
+
+
+def test_grpc_ordering_supports_custom_fields_param_name():
+    class CustomOrdering(BaseOrdering):
+        fields_param_name = "fields"
+
+        def __init__(self, fields):
+            self.fields = fields
+
+        def order(self, items, request):
+            return items
+
+    @grpc_service(app_label="example")
+    class UserService:
+        @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+        @grpc_ordering(CustomOrdering, fields=["value"])
+        def list_users(self, request, context):
+            return []
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "list_users"
+    )
+    assert method_meta.ordering_handler is not None
+    assert getattr(method_meta.ordering_handler, "fields") == ["value"]
+
+
+def test_grpc_searching_supports_custom_fields_param_name():
+    class CustomSearching(BaseSearching):
+        fields_param_name = "fields"
+
+        def __init__(self, fields):
+            self.fields = fields
+
+        def search(self, items, request):
+            return items
+
+    @grpc_service(app_label="example")
+    class UserService:
+        @grpc_method(request_schema=RequestSchema, response_schema=ResponseSchema)
+        @grpc_searching(CustomSearching, fields=["value"])
+        def list_users(self, request, context):
+            return []
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "list_users"
+    )
+    assert method_meta.searching_handler is not None
+    assert getattr(method_meta.searching_handler, "fields") == ["value"]
 
 
 def test_grpc_ordering_requires_position_under_grpc_method():
@@ -171,6 +292,21 @@ def test_permissions_are_declared_on_service_and_method():
     )
     assert len(definition.meta.permissions) == 1
     assert len(method_meta.permissions) == 1
+
+
+def test_grpc_method_wraps_top_level_list_response_schema():
+    @grpc_service(app_label="example")
+    class UserService:
+        @grpc_method(request_schema=None, response_schema=list[ResponseSchema])
+        def list_users(self, request, context):
+            return [{"value": 1}]
+
+    definition = registry.register(UserService)
+    method_meta = next(
+        item for item in definition.methods if item.handler_name == "list_users"
+    )
+    assert method_meta.response_schema is not None
+    assert tuple(method_meta.response_schema.model_fields.keys()) == ("items",)
 
 
 def test_descriptions_fallback_to_docstrings():

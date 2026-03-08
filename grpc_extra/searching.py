@@ -33,6 +33,9 @@ class SearchingError(Exception):
 
 
 class BaseSearching:
+    fields_param_name: str = "search_fields"
+    fields_required: bool = True
+
     @classmethod
     def build_request_schema(
         cls, request_schema: type[BaseModel] | None

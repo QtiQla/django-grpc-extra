@@ -1,0 +1,62 @@
+site_name: django-grpc-extra
+site_description: Decorator-based gRPC integration for Django
+site_url: https://qtiqla.github.io/django-grpc-extra/
+repo_url: https://github.com/QtiQla/django-grpc-extra
+repo_name: QtiQla/django-grpc-extra
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: bgreen
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to dark mode
+
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: bgreen
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to light mode
+
+  language: en
+  icon:
+    repo: fontawesome/brands/git-alt
+
+plugins:
+- search
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Installation: installation.md
+  - Core:
+      - Decorators: core/decorators.md
+      - Runtime: core/runtime.md
+      - Server: core/server.md
+      - Authentication: core/authentication.md
+      - Permissions: core/permissions.md
+  - Model Service:
+      - Overview: model-service/overview.md
+      - Filtering: model-service/filtering.md
+      - Searching and Ordering: model-service/searching-ordering.md
+      - Pagination: model-service/pagination.md
+  - Commands:
+      - init_grpc: commands/init-grpc.md
+      - generate_proto: commands/generate-proto.md
+      - run_grpcserver: commands/run-grpcserver.md
+  - Reference:
+      - Settings: reference/settings.md
+      - Errors: reference/errors.md
+  - Migration Notes: migration/notes.md
+  - FAQ: faq.md
+
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences

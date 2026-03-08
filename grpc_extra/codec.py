@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, is_dataclass
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, get_args, get_origin, cast
 
 from django.db.models import Model, QuerySet
 from pydantic import BaseModel
@@ -62,6 +62,15 @@ def _normalize_response(value: Any, schema: type[BaseModel] | None) -> dict[str,
         if not isinstance(payload, Mapping):
             raise ResponseEncodeError("Response must be mapping-compatible.")
         return cast(dict[str, Any], _coerce_protobuf_compatible(dict(payload)))
+
+    if _is_repeated_items_wrapper_schema(schema) and _is_collection_payload(value):
+        validated = schema.model_validate({"items": _materialize_collection(value)})
+        return cast(
+            dict[str, Any],
+            _coerce_protobuf_compatible(
+                validated.model_dump(mode="python", by_alias=True, exclude_none=True)
+            ),
+        )
 
     if isinstance(value, schema):
         return cast(
@@ -139,3 +148,27 @@ def _coerce_protobuf_compatible(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_coerce_protobuf_compatible(v) for v in value)
     return value
+
+
+def _is_repeated_items_wrapper_schema(schema: type[BaseModel]) -> bool:
+    fields = schema.model_fields
+    if tuple(fields.keys()) != ("items",):
+        return False
+    annotation = fields["items"].annotation
+    return get_origin(annotation) is list and len(get_args(annotation)) == 1
+
+
+def _is_collection_payload(value: Any) -> bool:
+    if isinstance(value, (str, bytes, bytearray, Mapping, BaseModel)):
+        return False
+    iterator = getattr(value, "iterator", None)
+    if isinstance(value, QuerySet) or callable(iterator):
+        return True
+    return isinstance(value, Iterable)
+
+
+def _materialize_collection(value: Any) -> list[Any]:
+    iterator = getattr(value, "iterator", None)
+    if isinstance(value, QuerySet) or callable(iterator):
+        return list(cast(Any, value).iterator())
+    return list(cast(Iterable[Any], value))

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable, Iterable
-from typing import Any, Type
+from typing import Any, Type, get_args, get_origin
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from .constants import (
     GRPC_METHOD_META,
@@ -105,8 +105,12 @@ def grpc_method(
         ordering_meta = getattr(method, GRPC_ORDERING_META, None)
         pagination_class = getattr(method, GRPC_PAGINATION_META, None)
         permissions_meta = getattr(method, GRPC_PERMISSIONS_META, ())
-        request_schema_resolved = request_schema
-        response_schema_resolved = response_schema
+        request_schema_resolved = _resolve_top_level_collection_schema(
+            request_schema, direction="request"
+        )
+        response_schema_resolved = _resolve_top_level_collection_schema(
+            response_schema, direction="response"
+        )
         searching_handler = None
         ordering_handler = None
 
@@ -159,9 +163,30 @@ def grpc_method(
     return decorator
 
 
+def _resolve_top_level_collection_schema(
+    schema: Type[BaseModel] | None | Any,
+    *,
+    direction: str,
+) -> Type[BaseModel] | None:
+    if schema is None:
+        return None
+    origin = get_origin(schema)
+    args = get_args(schema)
+    if origin is not list:
+        return schema
+    if len(args) != 1:
+        raise ValueError("List[T] schema must define exactly one item type.")
+    item_schema = args[0]
+    if not isinstance(item_schema, type) or not issubclass(item_schema, BaseModel):
+        raise ValueError("List[T] schema requires T to be a Pydantic model.")
+    wrapper_name = f"{item_schema.__name__}List{direction.title()}Schema"
+    item_list_type = list[item_schema]  # type: ignore[valid-type]
+    return create_model(wrapper_name, items=(item_list_type, ...))
+
+
 def grpc_pagination(
-    pagination_class: type[BasePagination] | str | None = None,
-) -> Callable[[Callable], Callable]:
+    pagination_class: Callable | type[BasePagination] | str | None = None,
+) -> Callable[[Callable], Callable] | Callable:
     """Attach pagination behavior to a grpc method.
 
     This decorator must be placed under `@grpc_method`.
@@ -178,13 +203,17 @@ def grpc_pagination(
         setattr(method, GRPC_PAGINATION_META, resolved)
         return method
 
+    if callable(pagination_class) and not inspect.isclass(pagination_class):
+        method = pagination_class
+        pagination_class = None
+        return decorator(method)
     return decorator
 
 
 def grpc_ordering(
-    ordering_class: type[BaseOrdering] | str | None = None,
+    ordering_class: Callable | type[BaseOrdering] | str | None = None,
     **ordering_params: Any,
-) -> Callable[[Callable], Callable]:
+) -> Callable[[Callable], Callable] | Callable:
     """Attach ordering behavior to a grpc method."""
 
     def decorator(method: Callable) -> Callable:
@@ -197,16 +226,26 @@ def grpc_ordering(
         )
         if resolved is None:
             raise ValueError("Ordering class cannot be None.")
-        setattr(method, GRPC_ORDERING_META, (resolved, dict(ordering_params)))
+        params = _resolve_modifier_fields_params(
+            ordering_params,
+            resolved=resolved,
+            legacy_fields_key="ordering_fields",
+            decorator_name="grpc_ordering",
+        )
+        setattr(method, GRPC_ORDERING_META, (resolved, params))
         return method
 
+    if callable(ordering_class) and not inspect.isclass(ordering_class):
+        method = ordering_class
+        ordering_class = None
+        return decorator(method)
     return decorator
 
 
 def grpc_searching(
-    searching_class: type[BaseSearching] | str | None = None,
+    searching_class: Callable | type[BaseSearching] | str | None = None,
     **searching_params: Any,
-) -> Callable[[Callable], Callable]:
+) -> Callable[[Callable], Callable] | Callable:
     """Attach searching behavior to a grpc method."""
 
     def decorator(method: Callable) -> Callable:
@@ -219,10 +258,72 @@ def grpc_searching(
         )
         if resolved is None:
             raise ValueError("Searching class cannot be None.")
-        setattr(method, GRPC_SEARCHING_META, (resolved, dict(searching_params)))
+        params = _resolve_modifier_fields_params(
+            searching_params,
+            resolved=resolved,
+            legacy_fields_key="search_fields",
+            decorator_name="grpc_searching",
+        )
+        setattr(method, GRPC_SEARCHING_META, (resolved, params))
         return method
 
+    if callable(searching_class) and not inspect.isclass(searching_class):
+        method = searching_class
+        searching_class = None
+        return decorator(method)
     return decorator
+
+
+def _has_explicit_fields(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, Iterable):
+        return any(True for _ in value)
+    return False
+
+
+def _resolve_modifier_fields_params(
+    raw_params: dict[str, Any],
+    *,
+    resolved: type[BaseOrdering] | type[BaseSearching],
+    legacy_fields_key: str,
+    decorator_name: str,
+) -> dict[str, Any]:
+    params = dict(raw_params)
+    fields_param_name = getattr(resolved, "fields_param_name", legacy_fields_key)
+    fields_required = bool(getattr(resolved, "fields_required", True))
+
+    alias_keys = {"fields", legacy_fields_key, fields_param_name}
+    present_alias_keys = [key for key in alias_keys if key in params]
+    if len(present_alias_keys) > 1:
+        raise ValueError(
+            f"{decorator_name} received multiple field parameter aliases: "
+            f"{', '.join(sorted(present_alias_keys))}. "
+            "Use only one of them."
+        )
+
+    fields_value = None
+    if "fields" in params:
+        fields_value = params.pop("fields")
+    elif legacy_fields_key in params and legacy_fields_key != fields_param_name:
+        fields_value = params.pop(legacy_fields_key)
+    elif fields_param_name in params:
+        fields_value = params[fields_param_name]
+    elif legacy_fields_key in params:
+        fields_value = params[legacy_fields_key]
+
+    if fields_required and not _has_explicit_fields(fields_value):
+        raise ValueError(
+            f"{decorator_name} requires fields for {resolved.__name__} "
+            f"(expected parameter: '{fields_param_name}')."
+        )
+
+    if fields_value is not None and fields_param_name not in params:
+        params[fields_param_name] = fields_value
+
+    return params
 
 
 def grpc_permissions(*permissions: PermissionLike) -> Callable[[Callable], Callable]:

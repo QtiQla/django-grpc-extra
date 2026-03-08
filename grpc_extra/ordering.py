@@ -15,6 +15,9 @@ class OrderingError(Exception):
 
 
 class BaseOrdering:
+    fields_param_name: str = "ordering_fields"
+    fields_required: bool = True
+
     @classmethod
     def build_request_schema(
         cls, request_schema: type[BaseModel] | None

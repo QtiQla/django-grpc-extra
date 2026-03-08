@@ -26,8 +26,8 @@ class GrpcAuthBase(ABC):
 class GrpcBearerAuthBase(GrpcAuthBase, ABC):
     """Bearer token auth helper for gRPC metadata-based backends."""
 
-    scheme: str = "bearer"
-    header: str = "authorization"
+    scheme: str = "Bearer"
+    header: str = "Authorization"
 
     def __call__(self, context, method: str, request=None) -> Any:
         token = self._extract_token(context)
@@ -44,10 +44,15 @@ class GrpcBearerAuthBase(GrpcAuthBase, ABC):
         raw_value = self._metadata_value(context, self.header)
         if not raw_value:
             return None
+        if not self.scheme:
+            token = raw_value.strip()
+            if not token:
+                return None
+            return token
         parts = raw_value.split(" ")
         if not parts:
             return None
-        if parts[0].lower() != self.scheme:
+        if parts[0].lower() != self.scheme.lower():
             return None
         token = " ".join(parts[1:]).strip()
         if not token:

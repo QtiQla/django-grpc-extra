@@ -126,7 +126,7 @@ def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
     assert calls
 
 
-def test_python_generator_does_not_overwrite_root_files_if_target_exists(
+def test_python_generator_updates_services_only_for_existing_target(
     monkeypatch, tmp_path
 ):
     proto = tmp_path / "app" / "grpc" / "proto" / "s.proto"
@@ -153,9 +153,16 @@ def test_python_generator_does_not_overwrite_root_files_if_target_exists(
 
     monkeypatch.setitem(sys.modules, "grpc_tools", SimpleNamespace(protoc=DummyProtoc))
     target_dir = tmp_path / "sdk"
-    target_dir.mkdir(parents=True)
+    runtime_dir = target_dir / "src" / "sdk"
+    runtime_dir.mkdir(parents=True)
     (target_dir / "pyproject.toml").write_text("version = '9.9.9'\n", encoding="utf-8")
     (target_dir / "README.md").write_text("custom readme\n", encoding="utf-8")
+    (runtime_dir / "client.py").write_text("custom client\n", encoding="utf-8")
+    (runtime_dir / "auth.py").write_text("custom auth\n", encoding="utf-8")
+    (runtime_dir / "config.py").write_text("custom config\n", encoding="utf-8")
+    (runtime_dir / "errors.py").write_text("custom errors\n", encoding="utf-8")
+    (runtime_dir / "__init__.py").write_text("custom init\n", encoding="utf-8")
+    (runtime_dir / "services.py").write_text("old services\n", encoding="utf-8")
 
     PythonClientSDKGenerator().generate(
         proto_files=[proto],
@@ -168,7 +175,14 @@ def test_python_generator_does_not_overwrite_root_files_if_target_exists(
         encoding="utf-8"
     ) == "version = '9.9.9'\n"
     assert (target_dir / "README.md").read_text(encoding="utf-8") == "custom readme\n"
-    assert (target_dir / "src" / "sdk" / "client.py").exists()
+    assert (runtime_dir / "client.py").read_text(encoding="utf-8") == "custom client\n"
+    assert (runtime_dir / "auth.py").read_text(encoding="utf-8") == "custom auth\n"
+    assert (runtime_dir / "config.py").read_text(encoding="utf-8") == "custom config\n"
+    assert (runtime_dir / "errors.py").read_text(encoding="utf-8") == "custom errors\n"
+    assert (runtime_dir / "__init__.py").read_text(encoding="utf-8") == "custom init\n"
+    services_py = (runtime_dir / "services.py").read_text(encoding="utf-8")
+    assert "old services" not in services_py
+    assert "PingServiceStub" in services_py
 
 
 def test_php_generator_requires_plugin(monkeypatch, tmp_path):

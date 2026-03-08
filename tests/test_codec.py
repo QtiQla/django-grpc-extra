@@ -31,6 +31,10 @@ class DecimalSchema(BaseModel):
     value: Decimal
 
 
+class ItemsSchema(BaseModel):
+    items: list[ItemSchema]
+
+
 class FakePb2:
     def __init__(self, **kwargs):
         self.payload = kwargs
@@ -168,3 +172,22 @@ def test_encode_response_coerces_decimal_values_to_string():
         StrictStringPb2,
     )
     assert encoded.payload["value"] == "51.5074"
+
+
+def test_encode_response_wraps_iterable_for_items_wrapper_schema():
+    encoded = encode_response_value(
+        [{"value": 1}, {"value": 2}],
+        ItemsSchema,
+        FakePb2,
+    )
+    assert encoded.payload["items"] == [{"value": 1}, {"value": 2}]
+
+
+def test_encode_response_wraps_iterator_container_for_items_wrapper_schema():
+    queryset = IteratorContainer([{"value": 3}, {"value": 4}])
+    encoded = encode_response_value(
+        queryset,
+        ItemsSchema,
+        FakePb2,
+    )
+    assert encoded.payload["items"] == [{"value": 3}, {"value": 4}]

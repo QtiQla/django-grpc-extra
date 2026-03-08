@@ -87,7 +87,6 @@ Optional extras:
 
 ```bash
 pip install "django-grpc-extra[codegen]"      # grpcio-tools
-pip install "django-grpc-extra[sdk]"          # client SDK generators
 pip install "django-grpc-extra[health]"       # health checking
 pip install "django-grpc-extra[reflection]"   # server reflection
 pip install "django-grpc-extra[reload]"       # watchfiles live reload
@@ -167,6 +166,7 @@ class ExampleService:
 - Request: `pb2 -> request_schema (Pydantic)`
 - Response: `dict/Pydantic/dataclass/model -> pb2`
 - Stream responses support iterables and objects with `.iterator()`
+- `Decimal` values are coerced to `string` before pb2 encoding (useful for Django `DecimalField` mapped to proto `string`)
 - `ValidationError` maps to `INVALID_ARGUMENT`
 - `PermissionError` maps to `PERMISSION_DENIED`
 - `grpc_pagination` applies pagination in runtime and augments proto schemas
@@ -245,6 +245,8 @@ For this config, the service gets:
 - `Detail`
 - `Create`
 
+`Detail` maps missing objects to `NOT_FOUND` (`ObjectDoesNotExist` -> gRPC `NOT_FOUND`).
+
 `List` uses pagination by default via `DEFAULT_PAGINATION_CLASS`.
 Set `list_pagination_class=None` in `ModelServiceConfig` to disable pagination.
 
@@ -284,6 +286,21 @@ class CustomDataHelper(ModelDataHelper):
     def delete_object(self, request):
         ...
 ```
+
+## 2.2) Permissions
+
+Permissions can be declared:
+- at service level via `@grpc_service(..., permissions=[...])`
+- at method level via `@grpc_method(..., permissions=[...])` or `@grpc_permissions(...)` under `@grpc_method`
+
+Permission contract:
+- `has_perm(self, request, context, service, method_meta) -> bool`
+- `has_obj_perm(self, request, context, service, method_meta, obj) -> bool`
+
+Runtime behavior:
+- service-level: `has_perm` for all methods
+- method-level: `has_perm` and `has_obj_perm`
+- for `Detail`/`Get`: service-level `has_obj_perm` is also applied
 
 ## 3) Generate `.proto` and `pb2`
 
@@ -422,8 +439,9 @@ GRPC_EXTRA = {
 ```
 
 Notes:
-- `AUTH_BACKEND`: callable `(context, method, request) -> bool | None`
-- `EXCEPTION_MAPPER`: callable `(exc: Exception) -> MappedError`
+- `AUTH_BACKEND`: callable, class (instantiated without args), or import path
+- auth result semantics: `False` or `None` means `UNAUTHENTICATED`
+- `EXCEPTION_MAPPER`: callable `(exc: Exception) -> MappedError` or import path to callable (class is not supported)
 - `SCHEMA_SUFFIX_STRIP`, `REQUEST_SUFFIX`, `RESPONSE_SUFFIX`: proto message naming adapter for top-level `request_schema`/`response_schema`
 - `DEFAULT_PAGINATION_CLASS`: default class used by `@grpc_pagination()` and `ModelService` list endpoint
 - request logs go to logger defined by `LOGGER_NAME` and then through standard Django `LOGGING`
@@ -447,39 +465,3 @@ app/**/grpc/**/proto/*_pb2.pyi
 `RESOURCE_EXHAUSTED`:
 - message size limits are too small
 - increase `MAX_MSG_MB` (server) and client message limits
-
-## 9) Generate Client SDK
-
-Generate language-specific client SDK artifacts from project proto files:
-
-```bash
-python manage.py generate_client_sdk --language python
-python manage.py generate_client_sdk --language php --out ./artifacts --name my-php-sdk
-```
-
-Supported flags:
-- `--language` (required): target language key
-- `--out`: output directory (default `generated-sdks`)
-- `--name`: SDK directory/package name (default `django-grpc-extra-<language>-client-sdk`)
-- `--app`: app label filter (repeatable)
-- `--all`: include all apps
-- `--skip-proto`: skip proto regeneration
-
-Default generators:
-- `python` -> `grpc_extra.sdk.generators.PythonClientSDKGenerator`
-- `php` -> `grpc_extra.sdk.generators.PhpClientSDKGenerator`
-
-You can override/add generators in Django settings:
-
-```python
-GRPC_EXTRA = {
-    "SDK_GENERATORS": {
-        "python": "grpc_extra.sdk.generators.PythonClientSDKGenerator",
-        "php": "grpc_extra.sdk.generators.PhpClientSDKGenerator",
-        "custom_lang": "path.to.CustomGenerator",
-    },
-    # required for PHP gRPC stubs:
-    "PHP_GRPC_PLUGIN": "/usr/local/bin/grpc_php_plugin",
-}
-```
-
