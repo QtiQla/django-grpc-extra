@@ -48,6 +48,7 @@ nav:
   - Commands:
       - init_grpc: commands/init-grpc.md
       - generate_proto: commands/generate-proto.md
+      - generate_client_sdk (Experimental): commands/generate-client-sdk.md
       - run_grpcserver: commands/run-grpcserver.md
   - Reference:
       - Settings: reference/settings.md

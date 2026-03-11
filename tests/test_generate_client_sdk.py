@@ -116,12 +116,48 @@ def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
     assert target.exists()
     assert (target / "pyproject.toml").exists()
     assert (target / "src" / "sdk" / "client.py").exists()
+    assert (target / "src" / "sdk" / "client_generated.py").exists()
+    assert (target / "src" / "sdk" / "helpers.py").exists()
+    assert (target / "src" / "sdk" / "models.py").exists()
+    assert (target / "src" / "sdk" / "typed_services.py").exists()
+    assert (target / "src" / "sdk" / "generated" / "app" / "services.py").exists()
+    assert (target / "src" / "sdk" / "generated" / "app" / "models.py").exists()
+    assert (target / "src" / "sdk" / "generated" / "app" / "typed_services.py").exists()
     services_py = (target / "src" / "sdk" / "services.py").read_text(encoding="utf-8")
-    assert "import importlib" not in services_py
-    assert (
-        "from app.grpc.proto.s_pb2_grpc import PingServiceStub as app_grpc_proto_s_pb2_grpc"
-        in services_py
+    client_py = (target / "src" / "sdk" / "client.py").read_text(encoding="utf-8")
+    generated_client_py = (target / "src" / "sdk" / "client_generated.py").read_text(
+        encoding="utf-8"
     )
+    typed_services_py = (target / "src" / "sdk" / "typed_services.py").read_text(
+        encoding="utf-8"
+    )
+    app_typed_services_py = (
+        target / "src" / "sdk" / "generated" / "app" / "typed_services.py"
+    ).read_text(encoding="utf-8")
+    app_services_py = (
+        target / "src" / "sdk" / "generated" / "app" / "services.py"
+    ).read_text(encoding="utf-8")
+    init_py = (target / "src" / "sdk" / "__init__.py").read_text(encoding="utf-8")
+    helpers_py = (target / "src" / "sdk" / "helpers.py").read_text(encoding="utf-8")
+    assert "import importlib" not in services_py
+    assert "from .generated.app.services import PingServiceClient" in services_py
+    assert (
+        "from app.grpc.proto.s_pb2_grpc import PingServiceStub as app_grpc_proto_s_pb2_grpc_PingServiceStub"
+        in app_services_py
+    )
+    assert "class GrpcClient(GeneratedGrpcClient):" in client_py
+    assert "def ping(self) -> PingServiceClient:" in generated_client_py
+    assert "def typed(self) -> TypedGrpcClient:" in generated_client_py
+    assert (
+        "from .generated.app.typed_services import TypedPingServiceClient"
+        in typed_services_py
+    )
+    assert (
+        "class TypedPingServiceClient(BaseTypedServiceClient):" in app_typed_services_py
+    )
+    assert "from .helpers import extract_results, message_to_dict" in init_py
+    assert "def message_to_dict(message: Any) -> dict[str, Any]:" in helpers_py
+    assert "def extract_results(message_or_dict: Any) -> list[Any]:" in helpers_py
     assert any(arg.startswith("--pyi_out=") for arg in calls[0])
     assert calls
 
@@ -163,6 +199,14 @@ def test_python_generator_updates_services_only_for_existing_target(
     (runtime_dir / "errors.py").write_text("custom errors\n", encoding="utf-8")
     (runtime_dir / "__init__.py").write_text("custom init\n", encoding="utf-8")
     (runtime_dir / "services.py").write_text("old services\n", encoding="utf-8")
+    (runtime_dir / "client_generated.py").write_text(
+        "old generated client\n", encoding="utf-8"
+    )
+    (runtime_dir / "helpers.py").write_text("custom helpers\n", encoding="utf-8")
+    (runtime_dir / "models.py").write_text("old models\n", encoding="utf-8")
+    (runtime_dir / "typed_services.py").write_text(
+        "old typed services\n", encoding="utf-8"
+    )
 
     PythonClientSDKGenerator().generate(
         proto_files=[proto],
@@ -180,9 +224,75 @@ def test_python_generator_updates_services_only_for_existing_target(
     assert (runtime_dir / "config.py").read_text(encoding="utf-8") == "custom config\n"
     assert (runtime_dir / "errors.py").read_text(encoding="utf-8") == "custom errors\n"
     assert (runtime_dir / "__init__.py").read_text(encoding="utf-8") == "custom init\n"
+    assert (runtime_dir / "helpers.py").read_text(
+        encoding="utf-8"
+    ) == "custom helpers\n"
     services_py = (runtime_dir / "services.py").read_text(encoding="utf-8")
+    generated_client_py = (runtime_dir / "client_generated.py").read_text(
+        encoding="utf-8"
+    )
+    models_py = (runtime_dir / "models.py").read_text(encoding="utf-8")
+    typed_services_py = (runtime_dir / "typed_services.py").read_text(encoding="utf-8")
     assert "old services" not in services_py
-    assert "PingServiceStub" in services_py
+    assert "old generated client" not in generated_client_py
+    assert "old models" not in models_py
+    assert "old typed services" not in typed_services_py
+    assert "from .generated.app.services import PingServiceClient" in services_py
+    assert "def ping(self) -> PingServiceClient:" in generated_client_py
+
+
+def test_python_generator_assigns_distinct_stub_aliases_per_service(
+    monkeypatch, tmp_path
+):
+    proto = tmp_path / "app" / "grpc" / "proto" / "s.proto"
+    proto.parent.mkdir(parents=True)
+    proto.write_text(
+        "\n".join(
+            [
+                'syntax = "proto3";',
+                "package app;",
+                "message PingRequest {}",
+                "message PingResponse {}",
+                "message PongRequest {}",
+                "message PongResponse {}",
+                "service PingService {",
+                "  rpc Ping (PingRequest) returns (PingResponse);",
+                "}",
+                "service PongService {",
+                "  rpc Pong (PongRequest) returns (PongResponse);",
+                "}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyProtoc:
+        @staticmethod
+        def main(_args):
+            return 0
+
+    monkeypatch.setitem(sys.modules, "grpc_tools", SimpleNamespace(protoc=DummyProtoc))
+    target = PythonClientSDKGenerator().generate(
+        proto_files=[proto],
+        out_dir=tmp_path,
+        sdk_name="sdk",
+        include_root=tmp_path,
+    )
+    services_py = (
+        target / "src" / "sdk" / "generated" / "app" / "services.py"
+    ).read_text(encoding="utf-8")
+    assert (
+        "from app.grpc.proto.s_pb2_grpc import PingServiceStub as app_grpc_proto_s_pb2_grpc_PingServiceStub"
+        in services_py
+    )
+    assert (
+        "from app.grpc.proto.s_pb2_grpc import PongServiceStub as app_grpc_proto_s_pb2_grpc_PongServiceStub"
+        in services_py
+    )
+    assert "class PingServiceClient(BaseServiceClient):" in services_py
+    assert "STUB_CLASS = app_grpc_proto_s_pb2_grpc_PingServiceStub" in services_py
+    assert "class PongServiceClient(BaseServiceClient):" in services_py
+    assert "STUB_CLASS = app_grpc_proto_s_pb2_grpc_PongServiceStub" in services_py
 
 
 def test_php_generator_requires_plugin(monkeypatch, tmp_path):
