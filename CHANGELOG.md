@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-12
+
+### Added
+
+- Python SDK generation improvements:
+  - typed SDK layer (`client.typed.<service>.<method>()`)
+  - Pydantic models generated from proto contracts
+  - helper module with `message_to_dict(...)` and `extract_results(...)`
+- Per-app SDK generated layout to avoid monolithic files:
+  - `generated/<app>/services.py`
+  - `generated/<app>/typed_services.py`
+  - `generated/<app>/models.py`
+- SDK command documentation (`generate_client_sdk`) with explicit Experimental status.
+
+### Changed
+
+- Python SDK generator architecture updated:
+  - generated and custom-safe files are separated
+  - `client.py` and `helpers.py` are preserved if already present
+  - generated facades and `generated/<app>/...` are regenerated on each run
+- README updated with SDK usage examples (`raw` and `typed`) and generated layout details.
+- Project version moved to stable `0.2.0`.
+
 ## [0.1.1b1] - 2026-03-08
 
 ### Changed

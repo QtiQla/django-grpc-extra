@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "django-grpc-extra"
-version = "0.1.1b1"
+version = "0.2.0"
 description = "Decorator-based gRPC integration for Django."
 readme = "README.md"
 requires-python = ">=3.10"

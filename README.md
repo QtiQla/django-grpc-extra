@@ -449,7 +449,82 @@ Notes:
 - `DEFAULT_PAGINATION_CLASS`: default class used by `@grpc_pagination()` and `ModelService` list endpoint
 - request logs go to logger defined by `LOGGER_NAME` and then through standard Django `LOGGING`
 
-## 7) Recommended `.gitignore` entries
+## 7) Generate Python SDK (experimental)
+
+> Status: **Experimental**
+>
+> SDK generator behavior and generated file layout may change between releases.
+
+Generate SDK from discovered proto files:
+
+```bash
+python -m django generate_client_sdk --language python --all
+```
+
+Common options:
+- `--language python`
+- `--out <path>`
+- `--name <sdk-package-name>`
+- `--app <label>` (repeatable)
+- `--all`
+- `--skip-proto` (skip proto regeneration, use existing proto files)
+
+### Generated layout
+
+SDK now uses per-app generated modules to avoid huge monolithic files:
+
+```text
+<sdk>/src/<package>/
+  <app>/grpc/proto/            # generated protobuf artifacts
+    *_pb2.py
+    *_pb2_grpc.py
+    *.pyi
+  client.py                  # custom layer (not overwritten if exists)
+  client_generated.py        # regenerated
+  helpers.py                 # custom-safe helper module (created if missing)
+  services.py                # facade, regenerated
+  typed_services.py          # facade, regenerated
+  models.py                  # facade, regenerated
+  generated/
+    <app>/
+      services.py            # regenerated
+      typed_services.py      # regenerated
+      models.py              # regenerated
+```
+
+Files that are safe for your custom code:
+- `client.py`
+- `helpers.py`
+
+Files that are always regenerated:
+- `client_generated.py`
+- `services.py`
+- `typed_services.py`
+- `models.py`
+- everything in `generated/<app>/`
+
+### Raw vs typed client
+
+```python
+from my_sdk import ClientConfig, GrpcClient, extract_results, message_to_dict
+
+client = GrpcClient(ClientConfig(host="localhost:50051"))
+
+# Raw protobuf response
+raw_resp = client.product.list()
+raw_dict = message_to_dict(raw_resp)
+rows = extract_results(raw_resp)  # for paginated list envelopes
+
+# Typed response (Pydantic models generated from proto)
+typed_resp = client.typed.product.list()
+```
+
+Notes:
+- `client.<service>.<method>()` -> raw protobuf messages (`*_pb2`).
+- `client.typed.<service>.<method>()` -> Pydantic models generated from proto schema.
+- `extract_results(...)` is a convenience helper for paginated list responses.
+
+## 8) Recommended `.gitignore` entries
 
 If generated files are not committed:
 
@@ -459,7 +534,7 @@ app/**/grpc/**/proto/*_pb2_grpc.py
 app/**/grpc/**/proto/*_pb2.pyi
 ```
 
-## 8) Common issues
+## 9) Common issues
 
 `ModuleNotFoundError: <name>_pb2`:
 - proto was generated with wrong include path or output path
