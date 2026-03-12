@@ -1101,6 +1101,7 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
                 """
             from __future__ import annotations
 
+            import inspect
             from typing import Any
 
             from google.protobuf.json_format import MessageToDict
@@ -1108,7 +1109,13 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
 
             def message_to_dict(message: Any) -> dict[str, Any]:
                 \"\"\"Convert protobuf message to plain Python dict.\"\"\"
-                return MessageToDict(message, preserving_proto_field_name=True)
+                kwargs: dict[str, Any] = {"preserving_proto_field_name": True}
+                params = inspect.signature(MessageToDict).parameters
+                if "always_print_fields_with_no_presence" in params:
+                    kwargs["always_print_fields_with_no_presence"] = True
+                elif "including_default_value_fields" in params:
+                    kwargs["including_default_value_fields"] = True
+                return MessageToDict(message, **kwargs)
 
 
             def extract_results(message_or_dict: Any) -> list[Any]:

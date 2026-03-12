@@ -157,6 +157,9 @@ def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
     )
     assert "from .helpers import extract_results, message_to_dict" in init_py
     assert "def message_to_dict(message: Any) -> dict[str, Any]:" in helpers_py
+    assert "inspect.signature(MessageToDict).parameters" in helpers_py
+    assert '"always_print_fields_with_no_presence"' in helpers_py
+    assert '"including_default_value_fields"' in helpers_py
     assert "def extract_results(message_or_dict: Any) -> list[Any]:" in helpers_py
     assert any(arg.startswith("--pyi_out=") for arg in calls[0])
     assert calls
