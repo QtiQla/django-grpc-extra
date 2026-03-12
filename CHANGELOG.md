@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-12
+
+### Added
+
+- SDK docs updates:
+  - dedicated docs page for `generate_client_sdk`
+  - explicit Experimental status in docs and README
+  - SDK layout notes now include protobuf artifacts location
+
+### Changed
+
+- Python SDK generator output layout:
+  - split generated code by app namespace under `generated/<app>/...`
+  - keep root `services.py`, `models.py`, `typed_services.py` as facades
+- SDK helper generation:
+  - `helpers.py` is generated if missing and preserved if already present
+- Generated code formatting improved (class spacing) to reduce linter noise.
+
+### Fixed
+
+- SDK stub alias collision where multiple services could resolve to the last imported stub.
+- Typed SDK conversion edge cases:
+  - include default protobuf scalar values (e.g. `offset=0`) in dict conversion
+  - backward-compatible `MessageToDict` argument handling across protobuf versions
+- Generated helpers template issue with extra braces in dict literal.
+- SDK package metadata now explicitly includes `pydantic>=2.0` dependency.
+
 ## [0.2.0] - 2026-03-12
 
 ### Added
