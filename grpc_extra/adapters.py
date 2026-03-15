@@ -215,6 +215,8 @@ class ServiceRuntimeAdapter:
         method_meta: MethodMeta,
         service: object | None,
     ) -> None:
+        if method_meta.permissions_overridden:
+            return
         permissions = self.definition.meta.permissions
         if not permissions:
             return
@@ -248,7 +250,10 @@ class ServiceRuntimeAdapter:
             self._run_has_obj_perm(
                 method_permissions, request, context, target, method_meta, obj
             )
-        if self._is_detail_method(method_meta):
+        if (
+            self._is_detail_method(method_meta)
+            and not method_meta.permissions_overridden
+        ):
             service_permissions = self.definition.meta.permissions
             if service_permissions:
                 self._run_has_obj_perm(

@@ -104,6 +104,46 @@ def test_service_level_permission_denies_before_method_execution():
     assert "Denied by has_perm" in message
 
 
+def test_method_permissions_override_service_permissions():
+    adapter = _adapter(service_permissions=(DenyPermission(),))
+    method_meta = MethodMeta(
+        name="Echo",
+        handler_name="echo",
+        request_schema=RequestSchema,
+        response_schema=ResponseSchema,
+        permissions=(BasePermission(),),
+        permissions_overridden=True,
+    )
+    wrapper = adapter._wrap_unary_unary(
+        lambda request, _context: {"value": request.value},
+        method_meta,
+        FakePb2,
+    )
+
+    result = wrapper({"value": 1}, FakeContext())
+    assert result.payload["value"] == 1
+
+
+def test_empty_method_permissions_can_disable_service_permissions():
+    adapter = _adapter(service_permissions=(DenyPermission(),))
+    method_meta = MethodMeta(
+        name="Echo",
+        handler_name="echo",
+        request_schema=RequestSchema,
+        response_schema=ResponseSchema,
+        permissions=(),
+        permissions_overridden=True,
+    )
+    wrapper = adapter._wrap_unary_unary(
+        lambda request, _context: {"value": request.value},
+        method_meta,
+        FakePb2,
+    )
+
+    result = wrapper({"value": 1}, FakeContext())
+    assert result.payload["value"] == 1
+
+
 def test_method_object_permission_denies_for_stream_items():
     adapter = _adapter()
     method_meta = MethodMeta(
@@ -146,6 +186,26 @@ def test_service_level_object_permission_applies_to_detail_methods():
     code, message = exc.value.args[0]
     assert code == grpc.StatusCode.PERMISSION_DENIED
     assert "Denied by has_obj_perm" in message
+
+
+def test_method_object_permissions_override_service_permissions_for_detail():
+    adapter = _adapter(service_permissions=(DenyObjectPermission(),))
+    method_meta = MethodMeta(
+        name="Detail",
+        handler_name="detail",
+        request_schema=RequestSchema,
+        response_schema=ResponseSchema,
+        permissions=(BasePermission(),),
+        permissions_overridden=True,
+    )
+    wrapper = adapter._wrap_unary_unary(
+        lambda request, _context: {"value": request.value},
+        method_meta,
+        FakePb2,
+    )
+
+    result = wrapper({"value": 1}, FakeContext())
+    assert result.payload["value"] == 1
 
 
 def test_is_authenticated_and_active_permissions():

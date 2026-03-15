@@ -45,7 +45,7 @@ Most common triggers:
 
 What to check:
 
-1. service-level vs method-level permission placement
+1. whether method-level permissions intentionally override service-level permissions
 2. identity attached to `context` in auth backend (`context.user`)
 3. object-level checks for `Detail/Get`
 
@@ -129,4 +129,3 @@ When status is unexpected:
 4. recreate client reflection/descriptor cache
 5. inspect server logs with full traceback
 6. verify auth + permissions path before business logic
-

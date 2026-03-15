@@ -295,6 +295,8 @@ class CustomDataHelper(ModelDataHelper):
 Permissions can be declared:
 - at service level via `@grpc_service(..., permissions=[...])`
 - at method level via `@grpc_method(..., permissions=[...])` or `@grpc_permissions(...)` under `@grpc_method`
+- service-level permissions are the default policy
+- explicit method-level permissions override service-level permissions
 
 Permission contract:
 - `has_perm(self, request, context, service, method_meta) -> bool`

@@ -8,6 +8,7 @@ from types import ModuleType
 
 import pytest
 from django.db import models
+from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from pydantic import BaseModel
 
 from grpc_extra.codec import (
@@ -33,6 +34,15 @@ class DecimalSchema(BaseModel):
 
 class ItemsSchema(BaseModel):
     items: list[ItemSchema]
+
+
+class IntChoiceSchema(BaseModel):
+    value: int
+    label: str
+
+
+class IntChoiceItemsSchema(BaseModel):
+    items: list[IntChoiceSchema]
 
 
 class FakePb2:
@@ -77,6 +87,43 @@ class StrictStringPb2:
         if not isinstance(value, str):
             raise TypeError("value must be string")
         self.payload = kwargs
+
+
+def _build_choice_items_pb2():
+    fd = descriptor_pb2.FileDescriptorProto()
+    fd.name = "choice_items.proto"
+    fd.package = "tests"
+
+    item_message = fd.message_type.add()
+    item_message.name = "IntChoiceSchema"
+
+    value_field = item_message.field.add()
+    value_field.name = "value"
+    value_field.number = 1
+    value_field.label = descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL
+    value_field.type = descriptor_pb2.FieldDescriptorProto.TYPE_INT64
+
+    label_field = item_message.field.add()
+    label_field.name = "label"
+    label_field.number = 2
+    label_field.label = descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL
+    label_field.type = descriptor_pb2.FieldDescriptorProto.TYPE_STRING
+
+    response_message = fd.message_type.add()
+    response_message.name = "ChoiceItemsResponse"
+
+    items_field = response_message.field.add()
+    items_field.name = "items"
+    items_field.number = 1
+    items_field.label = descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED
+    items_field.type = descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE
+    items_field.type_name = ".tests.IntChoiceSchema"
+
+    pool = descriptor_pool.DescriptorPool()
+    pool.Add(fd)
+    return message_factory.GetMessageClass(
+        pool.FindMessageTypeByName("tests.ChoiceItemsResponse")
+    )
 
 
 def test_decode_request_value_to_pydantic():
@@ -191,3 +238,22 @@ def test_encode_response_wraps_iterator_container_for_items_wrapper_schema():
         FakePb2,
     )
     assert encoded.payload["items"] == [{"value": 3}, {"value": 4}]
+
+
+def test_encode_response_preserves_all_items_for_repeated_message_wrapper():
+    response_pb2_cls = _build_choice_items_pb2()
+    encoded = encode_response_value(
+        [
+            IntChoiceSchema(value=1, label="Active"),
+            IntChoiceSchema(value=2, label="Paused"),
+            IntChoiceSchema(value=3, label="Unknown"),
+        ],
+        IntChoiceItemsSchema,
+        response_pb2_cls,
+    )
+    assert len(encoded.items) == 3
+    assert [(item.value, item.label) for item in encoded.items] == [
+        (1, "Active"),
+        (2, "Paused"),
+        (3, "Unknown"),
+    ]

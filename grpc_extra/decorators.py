@@ -104,7 +104,9 @@ def grpc_method(
         searching_meta = getattr(method, GRPC_SEARCHING_META, None)
         ordering_meta = getattr(method, GRPC_ORDERING_META, None)
         pagination_class = getattr(method, GRPC_PAGINATION_META, None)
+        has_method_permission_meta = hasattr(method, GRPC_PERMISSIONS_META)
         permissions_meta = getattr(method, GRPC_PERMISSIONS_META, ())
+        permissions_overridden = has_method_permission_meta or permissions is not None
         request_schema_resolved = _resolve_top_level_collection_schema(
             request_schema, direction="request"
         )
@@ -156,6 +158,7 @@ def grpc_method(
             permissions=(
                 resolve_permissions(permissions_meta) + resolve_permissions(permissions)
             ),
+            permissions_overridden=permissions_overridden,
         )
         setattr(method, GRPC_METHOD_META, meta)
         return method

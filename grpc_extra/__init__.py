@@ -26,11 +26,14 @@ from .permissions import (
 )
 from .model import (
     AllowedEndpoints,
+    ChoiceEndpointConfig,
     DefaultModelDataHelper,
+    IntChoiceSchema,
     ModelDataHelper,
     ModelFilterSchema,
     ModelService,
     ModelServiceConfig,
+    TextChoiceSchema,
 )
 from .searching import BaseSearching, Searching, SearchingError
 
@@ -47,6 +50,9 @@ __all__ = [
     "ModelService",
     "ModelServiceConfig",
     "AllowedEndpoints",
+    "ChoiceEndpointConfig",
+    "IntChoiceSchema",
+    "TextChoiceSchema",
     "ModelDataHelper",
     "DefaultModelDataHelper",
     "ModelFilterSchema",

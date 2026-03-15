@@ -111,6 +111,85 @@ Why this matters:
 - avoids N+1 queries
 - keeps endpoint-specific performance predictable
 
+## Generated Choice Endpoints
+
+`ModelService` can also generate read-only RPCs for Django `IntegerChoices` and `TextChoices`.
+
+This is useful when the service should expose enum-like reference data for clients, DWH services, forms, or other integrations without hand-writing one method per choice set.
+
+```python
+from django.db import models
+
+from grpc_extra import (
+    AllowedEndpoints as Endpoints,
+    ChoiceEndpointConfig,
+    ModelService,
+    ModelServiceConfig,
+    grpc_service,
+)
+
+
+class ProductStatus(models.IntegerChoices):
+    ACTIVE = 1, "Active"
+    ARCHIVED = 2, "Archived"
+
+
+@grpc_service(
+    name="ProductService",
+    app_label="products",
+    package="products",
+    permissions=[IsAuthActive],
+)
+class ProductService(ModelService):
+    config = ModelServiceConfig(
+        model=Product,
+        allowed_endpoints=[Endpoints.LIST, Endpoints.DETAIL],
+        list_schema=ProductListSchema,
+        detail_schema=ProductDetailSchema,
+        choice_endpoints=[
+            ChoiceEndpointConfig(
+                name="Statuses",
+                source=ProductStatus,
+                description="List available product statuses.",
+            ),
+        ],
+    )
+```
+
+The builder generates:
+
+- python handler: `statuses`
+- RPC method: `Statuses`
+- request schema: `google.protobuf.Empty`
+- response schema: `list[IntChoiceSchema]`
+
+For `TextChoices`, the generated response uses `TextChoiceSchema`.
+
+Available config fields:
+
+- `name`: public RPC method name
+- `source`: a Django choices class (or another object exposing `.choices`)
+- `description`: optional RPC description
+- `permissions`: optional method-level permissions
+- `response_schema`: optional custom schema override
+
+### Permission Semantics
+
+- if `permissions` is omitted on `ChoiceEndpointConfig`, the generated RPC inherits service-level permissions
+- if `permissions=[...]` is provided, it overrides service-level permissions for that generated RPC
+
+Example: make one choice endpoint public while keeping the rest of the service protected:
+
+```python
+choice_endpoints=[
+    ChoiceEndpointConfig(
+        name="Statuses",
+        source=ProductStatus,
+        permissions=[AllowAny],
+    ),
+]
+```
+
 ## Data Helper
 
 You can replace storage logic with custom helper:
@@ -160,8 +239,9 @@ Permissions are declared the same way as regular services.
 
 - service-level permissions via `@grpc_service(..., permissions=[...])`
 - method-level permissions via generated method metadata or custom methods
+- method-level permissions override service-level permissions when declared explicitly
 
-For `Detail`/`Get`, object-level checks are applied on both method-level and service-level permissions.
+For `Detail`/`Get`, object-level checks are applied on both method-level and service-level permissions only when the method does not override service-level permissions.
 
 ## Tips Before Production
 

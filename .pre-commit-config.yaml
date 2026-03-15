@@ -11,19 +11,19 @@ repos:
     hooks:
       - id: formatting_project
         name: Formatting
-        entry: make format
+        entry: bash -c 'if [ -f ".venv/bin/activate" ]; then source .venv/bin/activate; fi; make format'
         language: python
         pass_filenames: false
         always_run: true
       - id: linting_project
         name: Linting
-        entry: make lint
+        entry: bash -c 'if [ -f ".venv/bin/activate" ]; then source .venv/bin/activate; fi; make lint'
         language: python
         pass_filenames: false
         always_run: true
       - id: tests_project
         name: Tests
-        entry: make test
+        entry: bash -c 'if [ -f ".venv/bin/activate" ]; then source .venv/bin/activate; fi; make test'
         language: python
         pass_filenames: false
         always_run: true
