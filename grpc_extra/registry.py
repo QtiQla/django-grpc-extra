@@ -46,6 +46,7 @@ class MethodMeta:
     client_streaming: bool = False
     server_streaming: bool = False
     permissions: tuple["BasePermission", ...] = ()
+    permissions_overridden: bool = False
 
 
 @dataclass

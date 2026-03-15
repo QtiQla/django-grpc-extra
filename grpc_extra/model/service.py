@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, TypedDict, cast
 
 from pydantic import BaseModel, create_model
@@ -15,7 +16,7 @@ from grpc_extra.pagination import get_default_pagination_class, resolve_paginati
 from grpc_extra.searching import resolve_searching_class
 
 from .data_helper import DefaultModelDataHelper, ModelDataHelper
-from .schemas import AllowedEndpoints, ModelServiceConfig
+from .schemas import AllowedEndpoints, ChoiceEndpointConfig, ModelServiceConfig
 
 
 class EndpointMeta(TypedDict):
@@ -115,6 +116,8 @@ class ModelServiceBuilder:
     def build(self) -> None:
         for endpoint in self.config.allowed_endpoints:
             self._build_endpoint(endpoint)
+        for choice_endpoint in self.config.choice_endpoints:
+            self._build_choice_endpoint(choice_endpoint)
 
     def _build_endpoint(self, endpoint: AllowedEndpoints) -> None:
         meta = self.ENDPOINT_META[endpoint]
@@ -263,6 +266,41 @@ class ModelServiceBuilder:
         shared = list(self.config.permissions)
         specific = list(self.config.endpoint_permissions.get(endpoint, ()))
         return shared + specific
+
+    def _build_choice_endpoint(self, endpoint: ChoiceEndpointConfig) -> None:
+        handler_name = self._to_snake_case(endpoint.name)
+        if handler_name in self.service_cls.__dict__:
+            return
+
+        item_schema = endpoint.resolve_response_schema()
+
+        def handler(
+            self, request, context, *, _endpoint=endpoint, _item_schema=item_schema
+        ):
+            return [
+                _item_schema(value=value, label=label)
+                for value, label in list(getattr(_endpoint.source, "choices"))
+            ]
+
+        handler.__name__ = handler_name
+        handler.__doc__ = endpoint.description
+        item_list_type = list[item_schema]  # type: ignore[valid-type]
+        permissions = list(endpoint.permissions)
+        wrapped = grpc_method(
+            name=endpoint.name,
+            request_schema=None,
+            response_schema=cast(Any, item_list_type),
+            description=endpoint.description,
+            permissions=cast(Any, permissions) if permissions else None,
+        )(handler)
+        setattr(self.service_cls, handler_name, wrapped)
+
+    @staticmethod
+    def _to_snake_case(value: str) -> str:
+        normalized = value.replace("-", "_")
+        normalized = re.sub(r"(?<!^)(?=[A-Z])", "_", normalized)
+        normalized = re.sub(r"_+", "_", normalized)
+        return normalized.strip("_").lower()
 
 
 class ModelService:

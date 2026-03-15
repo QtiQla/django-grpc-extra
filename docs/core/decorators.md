@@ -216,14 +216,17 @@ class CustomSearching(BaseSearching):
 
 Adds method-level permissions.
 
+If method-level permissions are declared explicitly, they override service-level permissions for that RPC.
+
 ```python
-from grpc_extra import grpc_method, grpc_permissions
-from grpc_extra.permissions import IsAuthenticated
+from grpc_extra import grpc_method, grpc_permissions, grpc_service
+from grpc_extra.permissions import AllowAny, IsAuthenticated
 
 
+@grpc_service(permissions=[IsAuthenticated])
 class ExampleService:
     @grpc_method(request_schema=PingRequest, response_schema=PingResponse)
-    @grpc_permissions(IsAuthenticated)
+    @grpc_permissions(AllowAny)
     def ping(self, request, context):
         return {"message": "ok"}
 ```

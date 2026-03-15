@@ -6,10 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from grpc_extra import (
     AllowedEndpoints,
+    ChoiceEndpointConfig,
+    IntChoiceSchema,
     ModelDataHelper,
     ModelFilterSchema,
     ModelService,
     ModelServiceConfig,
+    TextChoiceSchema,
     grpc_service,
 )
 from grpc_extra.constants import GRPC_METHOD_META
@@ -43,6 +46,16 @@ class ExampleListFilter(ModelFilterSchema):
     ids: list[int] | None = Field(
         default=None, json_schema_extra={"op": "in", "field": "id"}
     )
+
+
+class ExampleStatus(models.IntegerChoices):
+    ACTIVE = 1, "Active"
+    PAUSED = 2, "Paused"
+
+
+class ExampleKind(models.TextChoices):
+    BASIC = "basic", "Basic"
+    PREMIUM = "premium", "Premium"
 
 
 def setup_function():
@@ -284,3 +297,93 @@ def test_model_service_config_accepts_legacy_list_searching_fields_alias():
         list_searching_fields=["name"],
     )
     assert config.list_search_fields == ["name"]
+
+
+def test_model_service_builds_choice_endpoints():
+    @grpc_service(app_label="example_app", package="example_app")
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[],
+            choice_endpoints=[
+                ChoiceEndpointConfig(name="Statuses", source=ExampleStatus),
+                ChoiceEndpointConfig(name="Kinds", source=ExampleKind),
+            ],
+        )
+
+    assert hasattr(ExampleService, "statuses")
+    assert hasattr(ExampleService, "kinds")
+
+    statuses_meta = getattr(ExampleService.statuses, GRPC_METHOD_META)
+    kinds_meta = getattr(ExampleService.kinds, GRPC_METHOD_META)
+
+    assert statuses_meta.name == "Statuses"
+    assert statuses_meta.request_schema is None
+    assert statuses_meta.response_schema is not None
+    assert (
+        statuses_meta.response_schema.model_fields["items"].annotation
+        == list[IntChoiceSchema]
+    )
+
+    assert kinds_meta.name == "Kinds"
+    assert kinds_meta.response_schema is not None
+    assert (
+        kinds_meta.response_schema.model_fields["items"].annotation
+        == list[TextChoiceSchema]
+    )
+
+    instance = ExampleService()
+    statuses = instance.statuses(None, None)
+    assert [(item.value, item.label) for item in statuses] == [
+        (1, "Active"),
+        (2, "Paused"),
+    ]
+
+
+def test_model_service_choice_endpoint_accepts_permissions_and_description():
+    @grpc_service(app_label="example_app", package="example_app")
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[],
+            choice_endpoints=[
+                ChoiceEndpointConfig(
+                    name="Statuses",
+                    source=ExampleStatus,
+                    description="List product statuses.",
+                    permissions=[IsAuthenticated],
+                ),
+            ],
+        )
+
+    statuses_meta = getattr(ExampleService.statuses, GRPC_METHOD_META)
+    assert statuses_meta.description == "List product statuses."
+    assert len(statuses_meta.permissions) == 1
+
+
+def test_model_service_choice_endpoint_inherits_service_permissions_by_default():
+    @grpc_service(
+        app_label="example_app",
+        package="example_app",
+        permissions=[IsAuthenticated],
+    )
+    class ExampleService(ModelService):
+        config = ModelServiceConfig(
+            model=ExampleModel,
+            allowed_endpoints=[],
+            choice_endpoints=[
+                ChoiceEndpointConfig(
+                    name="Statuses",
+                    source=ExampleStatus,
+                ),
+            ],
+        )
+
+    statuses_meta = getattr(ExampleService.statuses, GRPC_METHOD_META)
+    assert statuses_meta.permissions == ()
+    assert statuses_meta.permissions_overridden is False
+
+
+def test_choice_endpoint_requires_choices_source():
+    with pytest.raises(ValueError):
+        ChoiceEndpointConfig(name="Broken", source=object)

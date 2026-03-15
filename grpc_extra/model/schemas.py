@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Callable, Type
+from typing import Any, Callable, Type
 
+from django.db import models
 from django.db.models import Model
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 
@@ -22,8 +23,67 @@ class AllowedEndpoints(StringEnum):
     LIST = "list"
 
 
+class IntChoiceSchema(BaseModel):
+    value: int
+    label: str
+
+
+class TextChoiceSchema(BaseModel):
+    value: str
+    label: str
+
+
+class ChoiceEndpointConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    name: str
+    source: type[Any]
+    description: str | None = None
+    permissions: list[object] = Field(default_factory=list)
+    response_schema: Type[BaseModel] | None = None
+
+    @model_validator(mode="after")
+    def validate_choice_endpoint(self) -> Self:
+        if not self.name.strip():
+            raise ValueError("Choice endpoint name cannot be empty.")
+        if not hasattr(self.source, "choices"):
+            raise ValueError(
+                "Choice endpoint source must define a 'choices' attribute."
+            )
+        if self.response_schema is not None:
+            fields = self.response_schema.model_fields
+            missing = [field for field in ("value", "label") if field not in fields]
+            if missing:
+                raise ValueError(
+                    "Choice endpoint response_schema must define fields: "
+                    + ", ".join(missing)
+                )
+        return self
+
+    def resolve_response_schema(self) -> Type[BaseModel]:
+        if self.response_schema is not None:
+            return self.response_schema
+        if isinstance(self.source, type) and issubclass(
+            self.source, models.IntegerChoices
+        ):
+            return IntChoiceSchema
+        if isinstance(self.source, type) and issubclass(
+            self.source, models.TextChoices
+        ):
+            return TextChoiceSchema
+        choices = list(getattr(self.source, "choices"))
+        if not choices:
+            return TextChoiceSchema
+        first_value = choices[0][0]
+        if isinstance(first_value, int) and not isinstance(first_value, bool):
+            return IntChoiceSchema
+        return TextChoiceSchema
+
+
 class ModelServiceConfig(BaseModel):
     """Configuration for model-based gRPC CRUD service generation."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: Type[Model]
     allowed_endpoints: list[AllowedEndpoints] = Field(
@@ -58,6 +118,7 @@ class ModelServiceConfig(BaseModel):
     endpoint_permissions: dict[AllowedEndpoints, list[object]] = Field(
         default_factory=dict
     )
+    choice_endpoints: list[ChoiceEndpointConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_exists_schemas_by_allowed_endpoints(self) -> Self:

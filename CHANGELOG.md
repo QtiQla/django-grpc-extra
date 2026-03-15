@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-03-15
+
+### Added
+
+- `ModelService` choice endpoint generation:
+  - explicit `choice_endpoints` config in `ModelServiceConfig`
+  - generated RPC methods for Django `IntegerChoices` and `TextChoices`
+  - built-in `IntChoiceSchema` and `TextChoiceSchema`
+  - per-choice endpoint `description`, `permissions`, and custom `response_schema` override
+
+### Changed
+
+- `ModelService` permission semantics:
+  - explicit method-level permissions now override service-level permissions
+  - this applies both to handwritten RPC methods and generated `choice_endpoints`
+- documentation expanded for:
+  - method-level permission override behavior
+  - generated choice endpoints in `ModelService`
+
+
 ## [0.2.1] - 2026-03-12
 
 ### Added
