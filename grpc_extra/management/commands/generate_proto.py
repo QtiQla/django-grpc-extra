@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
+import importlib
 from decimal import Decimal
 from pathlib import Path
 from types import UnionType
@@ -467,6 +468,7 @@ class Command(BaseCommand):
 
         app_root = Path(app_path).parent
         grpc_tools_include = self._grpc_tools_include_path(grpc_tools)
+        googleapis_include = self._googleapis_include_path()
         compiled = 0
         for proto_file in proto_files:
             args = [
@@ -475,6 +477,8 @@ class Command(BaseCommand):
             ]
             if grpc_tools_include is not None:
                 args.append(f"-I{grpc_tools_include}")
+            if googleapis_include is not None:
+                args.append(f"-I{googleapis_include}")
             args.extend(
                 [
                     f"--python_out={app_root}",
@@ -497,4 +501,21 @@ class Command(BaseCommand):
         include_path = Path(module_file).resolve().parent / "_proto"
         if include_path.exists():
             return include_path
+        return None
+
+    def _googleapis_include_path(self) -> Path | None:
+        for module_name, proto_rel_path in (
+            ("google.type.date_pb2", "google/type/date.proto"),
+            ("google.type.timeofday_pb2", "google/type/timeofday.proto"),
+        ):
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError:
+                continue
+            module_file = getattr(module, "__file__", None)
+            if not module_file:
+                continue
+            include_path = Path(module_file).resolve().parents[2]
+            if (include_path / proto_rel_path).exists():
+                return include_path
         return None

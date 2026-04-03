@@ -118,6 +118,63 @@ def test_python_generator_uses_grpc_tools(monkeypatch, tmp_path):
     assert (target / "src" / "sdk" / "client.py").exists()
     assert (target / "src" / "sdk" / "client_generated.py").exists()
     assert (target / "src" / "sdk" / "helpers.py").exists()
+
+
+def test_python_generator_uses_googleapis_include_when_available(monkeypatch, tmp_path):
+    proto = tmp_path / "app" / "grpc" / "proto" / "s.proto"
+    proto.parent.mkdir(parents=True)
+    proto.write_text(
+        "\n".join(
+            [
+                'syntax = "proto3";',
+                "package app;",
+                "message PingRequest {}",
+                "message PingResponse {}",
+                "service PingService {",
+                "  rpc Ping (PingRequest) returns (PingResponse);",
+                "}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    fake_site_packages = tmp_path / "site-packages"
+    google_type_dir = fake_site_packages / "google" / "type"
+    google_type_dir.mkdir(parents=True)
+    (google_type_dir / "date.proto").write_text("", encoding="utf-8")
+    fake_date_pb2 = google_type_dir / "date_pb2.py"
+    fake_date_pb2.write_text("", encoding="utf-8")
+
+    class DummyProtoc:
+        @staticmethod
+        def main(args):
+            calls.append(args)
+            return 0
+
+    monkeypatch.setitem(
+        sys.modules,
+        "grpc_tools",
+        SimpleNamespace(
+            protoc=DummyProtoc,
+            __file__=str((tmp_path / "fake_grpc_tools" / "__init__.py")),
+        ),
+    )
+    monkeypatch.setattr(
+        "grpc_extra.sdk.generators.importlib.import_module",
+        lambda name: (
+            SimpleNamespace(__file__=str(fake_date_pb2))
+            if name == "google.type.date_pb2"
+            else (_ for _ in ()).throw(ImportError())
+        ),
+    )
+
+    target = PythonClientSDKGenerator().generate(
+        proto_files=[proto],
+        out_dir=tmp_path,
+        sdk_name="sdk",
+        include_root=tmp_path,
+    )
+    assert any(arg.startswith(f"-I{fake_site_packages}") for arg in calls[0])
     assert (target / "src" / "sdk" / "models.py").exists()
     assert (target / "src" / "sdk" / "typed_services.py").exists()
     assert (target / "src" / "sdk" / "generated" / "app" / "services.py").exists()

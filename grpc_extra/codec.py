@@ -4,6 +4,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, is_dataclass
 from decimal import Decimal
 from typing import Any, get_args, get_origin, cast
+from uuid import UUID
 
 from django.db.models import Model, QuerySet
 from pydantic import BaseModel
@@ -140,6 +141,8 @@ def _to_payload(value: Any) -> Any:
 
 def _coerce_protobuf_compatible(value: Any) -> Any:
     if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
         return str(value)
     if isinstance(value, Mapping):
         return {k: _coerce_protobuf_compatible(v) for k, v in value.items()}
