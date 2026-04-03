@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import re
 import shutil
 import subprocess
@@ -105,6 +106,7 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
         runtime_dir.mkdir(parents=True, exist_ok=True)
 
         grpc_tools_include = self._grpc_tools_include_path(grpc_tools)
+        googleapis_include = self._googleapis_include_path()
         for proto_file in proto_list:
             args = [
                 "protoc",
@@ -115,6 +117,8 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             ]
             if grpc_tools_include is not None:
                 args.append(f"-I{grpc_tools_include}")
+            if googleapis_include is not None:
+                args.append(f"-I{googleapis_include}")
             args.append(str(proto_file))
             result = protoc.main(args)
             if result != 0:
@@ -218,6 +222,23 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
         include_path = Path(module_file).resolve().parent / "_proto"
         if include_path.exists():
             return include_path
+        return None
+
+    def _googleapis_include_path(self) -> Path | None:
+        for module_name, proto_rel_path in (
+            ("google.type.date_pb2", "google/type/date.proto"),
+            ("google.type.timeofday_pb2", "google/type/timeofday.proto"),
+        ):
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError:
+                continue
+            module_file = getattr(module, "__file__", None)
+            if not module_file:
+                continue
+            include_path = Path(module_file).resolve().parents[2]
+            if (include_path / proto_rel_path).exists():
+                return include_path
         return None
 
     def _ensure_python_package_tree(

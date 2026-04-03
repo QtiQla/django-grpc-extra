@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "django-grpc-extra"
-version = "0.2.2"
+version = "0.2.3"
 description = "Decorator-based gRPC integration for Django."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,8 +48,8 @@ Homepage = "https://github.com/QtiQla/django-grpc-extra"
 Documentation = "https://qtiqla.github.io/django-grpc-extra/"
 
 [project.optional-dependencies]
-codegen = ["grpcio-tools>=1.50"]
-sdk = ["grpcio-tools>=1.50"]
+codegen = ["grpcio-tools>=1.50", "googleapis-common-protos>=1.63"]
+sdk = ["grpcio-tools>=1.50", "googleapis-common-protos>=1.63"]
 health = ["grpcio-health-checking>=1.50"]
 reflection = ["grpcio-reflection>=1.50"]
 reload = ["watchfiles>=0.21"]

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-04-03
+
+### Fixed
+
+- Proto generation and SDK generation now resolve `google/type/*.proto` imports correctly when `googleapis-common-protos` is installed.
+- Runtime response encoding now supports `UUID` values when proto fields are rendered as `string`.
+
 ## [0.2.2] - 2026-03-15
 
 ### Added

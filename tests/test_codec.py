@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import sys
 from types import ModuleType
+from uuid import UUID
 
 import pytest
 from django.db import models
@@ -30,6 +31,10 @@ class AttrSchema(BaseModel):
 
 class DecimalSchema(BaseModel):
     value: Decimal
+
+
+class UUIDSchema(BaseModel):
+    value: UUID
 
 
 class ItemsSchema(BaseModel):
@@ -219,6 +224,16 @@ def test_encode_response_coerces_decimal_values_to_string():
         StrictStringPb2,
     )
     assert encoded.payload["value"] == "51.5074"
+
+
+def test_encode_response_coerces_uuid_values_to_string():
+    raw_uuid = UUID("12345678-1234-5678-1234-567812345678")
+    encoded = encode_response_value(
+        {"value": raw_uuid},
+        UUIDSchema,
+        StrictStringPb2,
+    )
+    assert encoded.payload["value"] == "12345678-1234-5678-1234-567812345678"
 
 
 def test_encode_response_wraps_iterable_for_items_wrapper_schema():

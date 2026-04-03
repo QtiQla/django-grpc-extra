@@ -121,6 +121,49 @@ def test_compile_protos_uses_grpc_tools(monkeypatch, tmp_path):
     )
 
 
+def test_compile_protos_uses_googleapis_include_when_available(monkeypatch, tmp_path):
+    cmd = Command()
+    proto = tmp_path / "app" / "grpc" / "proto" / "service.proto"
+    proto.parent.mkdir(parents=True)
+    proto.write_text('syntax = "proto3";', encoding="utf-8")
+
+    calls = []
+    fake_grpc_tools_dir = tmp_path / "fake_grpc_tools"
+    (fake_grpc_tools_dir / "_proto").mkdir(parents=True)
+    fake_site_packages = tmp_path / "site-packages"
+    google_type_dir = fake_site_packages / "google" / "type"
+    google_type_dir.mkdir(parents=True)
+    (google_type_dir / "date.proto").write_text("", encoding="utf-8")
+    fake_date_pb2 = google_type_dir / "date_pb2.py"
+    fake_date_pb2.write_text("", encoding="utf-8")
+
+    class DummyProtoc:
+        @staticmethod
+        def main(args):
+            calls.append(args)
+            return 0
+
+    monkeypatch.setitem(
+        sys.modules,
+        "grpc_tools",
+        SimpleNamespace(
+            protoc=DummyProtoc, __file__=str(fake_grpc_tools_dir / "__init__.py")
+        ),
+    )
+    monkeypatch.setattr(
+        "grpc_extra.management.commands.generate_proto.importlib.import_module",
+        lambda name: (
+            SimpleNamespace(__file__=str(fake_date_pb2))
+            if name == "google.type.date_pb2"
+            else (_ for _ in ()).throw(ImportError())
+        ),
+    )
+
+    compiled = cmd._compile_protos(str(proto.parent.parent.parent), [proto], pyi=False)
+    assert compiled == 1
+    assert any(arg.startswith(f"-I{fake_site_packages}") for arg in calls[0])
+
+
 def test_compile_protos_raises_on_failure(monkeypatch, tmp_path):
     cmd = Command()
     proto = tmp_path / "app" / "grpc" / "proto" / "service.proto"
