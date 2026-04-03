@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-04-03
+
+### Fixed
+
+- Runtime response encoding now supports `datetime.date` and `datetime.time` for proto fields generated as `google.type.Date` and `google.type.TimeOfDay`.
+- Post-generation protobuf compilation continues to resolve `google/type/*.proto` imports correctly via `googleapis-common-protos`.
+
 ## [0.2.3] - 2026-04-03
 
 ### Fixed

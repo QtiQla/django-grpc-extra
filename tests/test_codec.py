@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, time
 from decimal import Decimal
 
 import sys
@@ -35,6 +36,14 @@ class DecimalSchema(BaseModel):
 
 class UUIDSchema(BaseModel):
     value: UUID
+
+
+class DateSchema(BaseModel):
+    value: date
+
+
+class TimeSchema(BaseModel):
+    value: time
 
 
 class ItemsSchema(BaseModel):
@@ -234,6 +243,29 @@ def test_encode_response_coerces_uuid_values_to_string():
         StrictStringPb2,
     )
     assert encoded.payload["value"] == "12345678-1234-5678-1234-567812345678"
+
+
+def test_encode_response_coerces_date_values_to_google_type_payload():
+    encoded = encode_response_value(
+        {"value": date(2026, 4, 3)},
+        DateSchema,
+        FakePb2,
+    )
+    assert encoded.payload["value"] == {"year": 2026, "month": 4, "day": 3}
+
+
+def test_encode_response_coerces_time_values_to_google_type_payload():
+    encoded = encode_response_value(
+        {"value": time(13, 41, 26, 123456)},
+        TimeSchema,
+        FakePb2,
+    )
+    assert encoded.payload["value"] == {
+        "hours": 13,
+        "minutes": 41,
+        "seconds": 26,
+        "nanos": 123456000,
+    }
 
 
 def test_encode_response_wraps_iterable_for_items_wrapper_schema():

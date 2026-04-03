@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, is_dataclass
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, get_args, get_origin, cast
 from uuid import UUID
@@ -144,6 +145,19 @@ def _coerce_protobuf_compatible(value: Any) -> Any:
         return str(value)
     if isinstance(value, UUID):
         return str(value)
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return {
+            "year": value.year,
+            "month": value.month,
+            "day": value.day,
+        }
+    if isinstance(value, time):
+        return {
+            "hours": value.hour,
+            "minutes": value.minute,
+            "seconds": value.second,
+            "nanos": value.microsecond * 1000,
+        }
     if isinstance(value, Mapping):
         return {k: _coerce_protobuf_compatible(v) for k, v in value.items()}
     if isinstance(value, list):

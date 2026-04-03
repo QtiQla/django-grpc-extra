@@ -1,6 +1,10 @@
 # django-grpc-extra
 
 [![PyPI version](https://img.shields.io/pypi/v/django-grpc-extra.svg)](https://pypi.org/project/django-grpc-extra/)
+[![Python versions](https://img.shields.io/pypi/pyversions/django-grpc-extra.svg)](https://pypi.org/project/django-grpc-extra/)
+[![License](https://img.shields.io/pypi/l/django-grpc-extra.svg)](https://github.com/QtiQla/django-grpc-extra/blob/main/LICENSE)
+[![Development Status](https://img.shields.io/badge/status-beta-f2c744.svg)](https://pypi.org/project/django-grpc-extra/)
+[![PyPI downloads](https://static.pepy.tech/badge/django-grpc-extra)](https://pepy.tech/projects/django-grpc-extra)
 [![Docs](https://img.shields.io/badge/docs-online-2ea44f)](https://qtiqla.github.io/django-grpc-extra/)
 
 `django-grpc-extra` provides a decorator-based workflow for building gRPC APIs in Django:
