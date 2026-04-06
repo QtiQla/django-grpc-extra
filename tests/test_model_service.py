@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from django.db import models
 import pytest
+from django.db import models
 from pydantic import BaseModel, ConfigDict, Field
 
 from grpc_extra import (

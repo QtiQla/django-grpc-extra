@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-06
+
+### Added
+
+- In-process testing toolkit for service integration tests:
+  - new `grpc_extra.testing` package
+  - `GrpcTestClient` for unary-unary RPC calls through the existing runtime adapter
+  - `GrpcTestResponse` with convenient access to raw protobuf messages, decoded payloads, status code, details, and metadata
+  - `TestServicerContext` for request metadata and custom test context state
+- Documentation for service testing, including examples for regular services, auth-aware calls, and `ModelService` endpoints.
+
+### Fixed
+
+- Python SDK generation now maps `google.type.Date` and `google.type.TimeOfDay` to typed `date` and `time` fields in generated Pydantic models.
+- Generated Python SDK request conversion now serializes `date`, `time`, `UUID`, and `Decimal` values into protobuf-compatible payloads before invoking RPC methods.
+- Request decoding now correctly converts `google.type.Date` and `google.type.TimeOfDay` protobuf dicts back into Python `date` and `time` objects before Pydantic validation, fixing `INVALID_ARGUMENT` errors on filter and POST endpoints that use these field types. Invalid date/time components now raise a descriptive `RequestDecodeError` instead of a confusing Pydantic type error.
+
 ## [0.2.4] - 2026-04-03
 
 ### Fixed

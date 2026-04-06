@@ -6,16 +6,16 @@ from pydantic import BaseModel
 from grpc_extra.decorators import (
     grpc_method,
     grpc_ordering,
-    grpc_permissions,
     grpc_pagination,
+    grpc_permissions,
     grpc_searching,
     grpc_service,
 )
 from grpc_extra.ordering import BaseOrdering, Ordering
 from grpc_extra.pagination import LimitOffsetPagination
 from grpc_extra.permissions import AllowAny
-from grpc_extra.searching import BaseSearching, Searching
 from grpc_extra.registry import registry
+from grpc_extra.searching import BaseSearching, Searching
 
 
 class RequestSchema(BaseModel):
@@ -240,7 +240,7 @@ def test_grpc_ordering_supports_custom_fields_param_name():
         item for item in definition.methods if item.handler_name == "list_users"
     )
     assert method_meta.ordering_handler is not None
-    assert getattr(method_meta.ordering_handler, "fields") == ["value"]
+    assert method_meta.ordering_handler.fields == ["value"]
 
 
 def test_grpc_searching_supports_custom_fields_param_name():
@@ -265,7 +265,7 @@ def test_grpc_searching_supports_custom_fields_param_name():
         item for item in definition.methods if item.handler_name == "list_users"
     )
     assert method_meta.searching_handler is not None
-    assert getattr(method_meta.searching_handler, "fields") == ["value"]
+    assert method_meta.searching_handler.fields == ["value"]
 
 
 def test_grpc_ordering_requires_position_under_grpc_method():

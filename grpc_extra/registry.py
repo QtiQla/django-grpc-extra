@@ -9,8 +9,8 @@ if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from .ordering import BaseOrdering
-    from .permissions import BasePermission
     from .pagination import BasePagination
+    from .permissions import BasePermission
     from .searching import BaseSearching
 
 

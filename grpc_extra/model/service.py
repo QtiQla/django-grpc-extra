@@ -279,7 +279,7 @@ class ModelServiceBuilder:
         ):
             return [
                 _item_schema(value=value, label=label)
-                for value, label in list(getattr(_endpoint.source, "choices"))
+                for value, label in list(_endpoint.source.choices)
             ]
 
         handler.__name__ = handler_name
