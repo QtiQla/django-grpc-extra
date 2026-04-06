@@ -194,7 +194,7 @@ def test_grpc_test_client_rejects_streaming_methods():
         )
 
 
-class ExampleModel(models.Model):
+class ExampleSecondModel(models.Model):
     name = models.CharField(max_length=100)
 
     class Meta:
@@ -238,7 +238,7 @@ def test_grpc_test_client_supports_model_service_list_pagination():
     class ExampleService(ModelService):
         data_helper_class = FakeHelper
         config = ModelServiceConfig(
-            model=ExampleModel,
+            model=ExampleSecondModel,
             allowed_endpoints=[AllowedEndpoints.LIST],
             list_schema=ExampleOut,
         )
