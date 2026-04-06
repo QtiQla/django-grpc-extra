@@ -1,13 +1,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Protocol, cast
 
 from django.db.models import QuerySet
 from pydantic import BaseModel
-from typing import cast
 
 from .filtering import ModelFilterSchema
 from .schemas import ModelServiceConfig
+
+
+class PayloadRequest(Protocol):
+    payload: BaseModel
+
+
+class LookupRequest(Protocol):
+    def __getattr__(self, name: str) -> object: ...
+
+
+class LookupPayloadRequest(PayloadRequest, LookupRequest, Protocol):
+    pass
 
 
 class ModelDataHelper(ABC):
@@ -21,7 +33,7 @@ class ModelDataHelper(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_object(self, request: BaseModel):
+    def get_object(self, request: LookupRequest):
         raise NotImplementedError
 
     @abstractmethod
@@ -29,15 +41,15 @@ class ModelDataHelper(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def update_object(self, request: BaseModel):
+    def update_object(self, request: LookupPayloadRequest):
         raise NotImplementedError
 
     @abstractmethod
-    def patch_object(self, request: BaseModel):
+    def patch_object(self, request: LookupPayloadRequest):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_object(self, request: BaseModel):
+    def delete_object(self, request: LookupRequest):
         raise NotImplementedError
 
 
@@ -63,7 +75,7 @@ class DefaultModelDataHelper(ModelDataHelper):
             )
         return cast(QuerySet, queryset.all())
 
-    def get_lookup_value(self, request: BaseModel):
+    def get_lookup_value(self, request: LookupRequest):
         return getattr(request, self.config.lookup_field)
 
     def list_objects(self, request: BaseModel | None) -> QuerySet:
@@ -87,7 +99,7 @@ class DefaultModelDataHelper(ModelDataHelper):
             return queryset
         return queryset.filter(**filter_kwargs)
 
-    def get_object(self, request: BaseModel):
+    def get_object(self, request: LookupRequest):
         lookup_value = self.get_lookup_value(request)
         return self.get_detail_queryset().get(
             **{self.config.lookup_field: lookup_value}
@@ -97,11 +109,11 @@ class DefaultModelDataHelper(ModelDataHelper):
         payload = request.model_dump(mode="python", by_alias=True, exclude_none=True)
         return self.config.model.objects.create(**payload)
 
-    def update_object(self, request: BaseModel):
+    def update_object(self, request: LookupPayloadRequest):
         instance = self.get_queryset().get(
             **{self.config.lookup_field: self.get_lookup_value(request)}
         )
-        payload_model = getattr(request, "payload")
+        payload_model = request.payload
         payload = payload_model.model_dump(
             mode="python",
             by_alias=True,
@@ -113,11 +125,11 @@ class DefaultModelDataHelper(ModelDataHelper):
         instance.save()
         return instance
 
-    def patch_object(self, request: BaseModel):
+    def patch_object(self, request: LookupPayloadRequest):
         instance = self.get_queryset().get(
             **{self.config.lookup_field: self.get_lookup_value(request)}
         )
-        payload_model = getattr(request, "payload")
+        payload_model = request.payload
         payload = payload_model.model_dump(
             mode="python",
             by_alias=True,
@@ -129,7 +141,7 @@ class DefaultModelDataHelper(ModelDataHelper):
         instance.save()
         return instance
 
-    def delete_object(self, request: BaseModel):
+    def delete_object(self, request: LookupRequest):
         instance = self.get_queryset().get(
             **{self.config.lookup_field: self.get_lookup_value(request)}
         )

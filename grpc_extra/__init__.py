@@ -1,29 +1,13 @@
+from .auth import GrpcAuthBase, GrpcBearerAuthBase
 from .decorators import (
     grpc_method,
     grpc_ordering,
-    grpc_permissions,
     grpc_pagination,
+    grpc_permissions,
     grpc_searching,
     grpc_service,
 )
-from .auth import GrpcAuthBase, GrpcBearerAuthBase
 from .main import GrpcExtra
-from .pagination import BasePagination, LimitOffsetPagination, PaginationError
-from .sdk import (
-    BaseClientSDKGenerator,
-    PhpClientSDKGenerator,
-    PythonClientSDKGenerator,
-    SDKGenerationError,
-)
-from .ordering import BaseOrdering, Ordering, OrderingError
-from .permissions import (
-    AllowAny,
-    BasePermission,
-    DjangoModelPermissions,
-    IsAuthActive,
-    IsAuthenticated,
-    IsAuthenticatedActive,
-)
 from .model import (
     AllowedEndpoints,
     ChoiceEndpointConfig,
@@ -35,7 +19,29 @@ from .model import (
     ModelServiceConfig,
     TextChoiceSchema,
 )
+from .ordering import BaseOrdering, Ordering, OrderingError
+from .pagination import BasePagination, LimitOffsetPagination, PaginationError
+from .permissions import (
+    AllowAny,
+    BasePermission,
+    DjangoModelPermissions,
+    IsAuthActive,
+    IsAuthenticated,
+    IsAuthenticatedActive,
+)
+from .sdk import (
+    BaseClientSDKGenerator,
+    PhpClientSDKGenerator,
+    PythonClientSDKGenerator,
+    SDKGenerationError,
+)
 from .searching import BaseSearching, Searching, SearchingError
+from .testing import (
+    GrpcTestClient,
+    GrpcTestResponse,
+    TestServicerContext,
+    make_pb2_module,
+)
 
 __all__ = [
     "GrpcExtra",
@@ -71,6 +77,10 @@ __all__ = [
     "BaseSearching",
     "Searching",
     "SearchingError",
+    "GrpcTestClient",
+    "GrpcTestResponse",
+    "TestServicerContext",
+    "make_pb2_module",
     "BaseClientSDKGenerator",
     "PythonClientSDKGenerator",
     "PhpClientSDKGenerator",

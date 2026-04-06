@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import date, time
 from decimal import Decimal
-
-import sys
 from types import ModuleType
 from uuid import UUID
 
 import pytest
 from django.db import models
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from grpc_extra.codec import (
+    _coerce_google_types_to_python,
     decode_request_iter,
     decode_request_value,
     encode_response_iter,
@@ -304,3 +304,227 @@ def test_encode_response_preserves_all_items_for_repeated_message_wrapper():
         (2, "Paused"),
         (3, "Unknown"),
     ]
+
+
+# --- _coerce_google_types_to_python unit tests ---
+
+
+class _DateSchema(BaseModel):
+    value: date
+
+
+class _OptionalDateSchema(BaseModel):
+    value: date | None = None
+
+
+class _TimeSchema(BaseModel):
+    value: time
+
+
+class _OptionalTimeSchema(BaseModel):
+    value: time | None = None
+
+
+class _DateTimeComboSchema(BaseModel):
+    start_date: date
+    start_time: time | None = None
+    name: str = ""
+
+
+class _ListDateSchema(BaseModel):
+    dates: list[date]
+
+
+class _FalsePosSchema(BaseModel):
+    # Fields that overlap with TimeOfDay names but are plain ints
+    hours: int
+    minutes: int
+
+
+def test_coerce_google_date_all_fields():
+    result = _coerce_google_types_to_python(
+        {"value": {"year": 2025, "month": 11, "day": 30}}, _DateSchema
+    )
+    assert result == {"value": date(2025, 11, 30)}
+
+
+def test_coerce_google_date_missing_day_defaults_to_1():
+    # MessageToDict omits zero-value fields — day=1 is the safe default
+    result = _coerce_google_types_to_python(
+        {"value": {"year": 2025, "month": 1}}, _DateSchema
+    )
+    assert result == {"value": date(2025, 1, 1)}
+
+
+def test_coerce_google_date_optional_field():
+    result = _coerce_google_types_to_python(
+        {"value": {"year": 2026, "month": 6, "day": 1}}, _OptionalDateSchema
+    )
+    assert result == {"value": date(2026, 6, 1)}
+
+
+def test_coerce_google_time_all_fields():
+    result = _coerce_google_types_to_python(
+        {"value": {"hours": 14, "minutes": 30, "seconds": 5, "nanos": 500_000_000}},
+        _TimeSchema,
+    )
+    assert result == {"value": time(14, 30, 5, 500_000)}
+
+
+def test_coerce_google_time_hours_zero_omitted_by_message_to_dict():
+    # hours=0 is omitted by MessageToDict in proto3 — must still be parsed as time
+    result = _coerce_google_types_to_python(
+        {"value": {"minutes": 30, "seconds": 0}}, _TimeSchema
+    )
+    assert result == {"value": time(0, 30, 0, 0)}
+
+
+def test_coerce_google_time_only_seconds():
+    result = _coerce_google_types_to_python({"value": {"seconds": 45}}, _TimeSchema)
+    assert result == {"value": time(0, 0, 45, 0)}
+
+
+def test_coerce_google_time_optional_field():
+    result = _coerce_google_types_to_python(
+        {"value": {"hours": 8, "minutes": 0}}, _OptionalTimeSchema
+    )
+    assert result == {"value": time(8, 0, 0, 0)}
+
+
+def test_coerce_google_types_nested_in_dict():
+    result = _coerce_google_types_to_python(
+        {
+            "start_date": {"year": 2025, "month": 11, "day": 30},
+            "start_time": {"hours": 9, "minutes": 0},
+            "name": "test",
+        },
+        _DateTimeComboSchema,
+    )
+    assert result == {
+        "start_date": date(2025, 11, 30),
+        "start_time": time(9, 0, 0, 0),
+        "name": "test",
+    }
+
+
+def test_coerce_google_types_in_list_field():
+    result = _coerce_google_types_to_python(
+        {
+            "dates": [
+                {"year": 2025, "month": 1, "day": 15},
+                {"year": 2026, "month": 6, "day": 1},
+            ]
+        },
+        _ListDateSchema,
+    )
+    assert result == {"dates": [date(2025, 1, 15), date(2026, 6, 1)]}
+
+
+def test_coerce_google_types_unrelated_dict_unchanged():
+    payload = {"status": "active", "count": 5}
+    result = _coerce_google_types_to_python(payload)
+    assert result == {"status": "active", "count": 5}
+
+
+def test_coerce_no_false_positive_for_time_like_field_names():
+    # A message with fields named hours/minutes but typed as int must NOT become time
+    result = _coerce_google_types_to_python(
+        {"hours": 4, "minutes": 30}, _FalsePosSchema
+    )
+    assert result == {"hours": 4, "minutes": 30}
+
+
+# --- Integration through decode_request_value ---
+
+
+class DateFilterSchema(BaseModel):
+    start_date: date
+    end_date: date | None = None
+
+
+class TimeFilterSchema(BaseModel):
+    opens_at: time
+    closes_at: time | None = None
+
+
+class DateTimeFilterSchema(BaseModel):
+    start_date: date
+    start_time: time | None = None
+
+
+class DateAliasFilterSchema(BaseModel):
+    start_date: date = Field(alias="startDate")
+
+
+class TimeAliasFilterSchema(BaseModel):
+    opens_at: time = Field(alias="opensAt")
+
+
+def test_decode_request_value_coerces_google_date_dict():
+    decoded = decode_request_value(
+        {"start_date": {"year": 2025, "month": 11, "day": 30}},
+        DateFilterSchema,
+    )
+    assert decoded.start_date == date(2025, 11, 30)
+    assert decoded.end_date is None
+
+
+def test_decode_request_value_coerces_google_time_dict():
+    decoded = decode_request_value(
+        {"opens_at": {"hours": 8, "minutes": 30}},
+        TimeFilterSchema,
+    )
+    assert decoded.opens_at == time(8, 30, 0)
+    assert decoded.closes_at is None
+
+
+def test_decode_request_value_coerces_time_when_hours_zero():
+    # hours=0 omitted by MessageToDict — the framework must handle this
+    decoded = decode_request_value(
+        {"opens_at": {"minutes": 45}},
+        TimeFilterSchema,
+    )
+    assert decoded.opens_at == time(0, 45, 0)
+
+
+def test_decode_request_value_coerces_date_and_time_together():
+    decoded = decode_request_value(
+        {
+            "start_date": {"year": 2025, "month": 6, "day": 15},
+            "start_time": {"hours": 9, "minutes": 0},
+        },
+        DateTimeFilterSchema,
+    )
+    assert decoded.start_date == date(2025, 6, 15)
+    assert decoded.start_time == time(9, 0, 0)
+
+
+def test_decode_request_value_coerces_google_date_dict_for_alias_field():
+    decoded = decode_request_value(
+        {"startDate": {"year": 2025, "month": 11, "day": 30}},
+        DateAliasFilterSchema,
+    )
+    assert decoded.start_date == date(2025, 11, 30)
+
+
+def test_decode_request_value_coerces_google_time_dict_for_alias_field():
+    decoded = decode_request_value(
+        {"opensAt": {"hours": 8, "minutes": 30}},
+        TimeAliasFilterSchema,
+    )
+    assert decoded.opens_at == time(8, 30, 0)
+
+
+def test_coerce_google_date_invalid_components_raises():
+    # November has 30 days — day=31 must raise a clear error, not silently pass
+    with pytest.raises(RequestDecodeError, match="Invalid date"):
+        _coerce_google_types_to_python(
+            {"value": {"year": 2025, "month": 11, "day": 31}}, _DateSchema
+        )
+
+
+def test_coerce_google_time_invalid_components_raises():
+    with pytest.raises(RequestDecodeError, match="Invalid time"):
+        _coerce_google_types_to_python(
+            {"value": {"hours": 25, "minutes": 0}}, _TimeSchema
+        )

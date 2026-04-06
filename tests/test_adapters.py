@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from grpc_extra.adapters import ServiceRuntimeAdapter
 from grpc_extra.ordering import Ordering
 from grpc_extra.pagination import LimitOffsetPagination
-from grpc_extra.searching import Searching
 from grpc_extra.registry import MethodMeta, ServiceDefinition, ServiceMeta
+from grpc_extra.searching import Searching
 
 
 class RequestSchema(BaseModel):

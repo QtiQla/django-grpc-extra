@@ -40,6 +40,7 @@ nav:
       - Server: core/server.md
       - Authentication: core/authentication.md
       - Permissions: core/permissions.md
+      - Testing: core/testing.md
   - Model Service:
       - Overview: model-service/overview.md
       - Filtering: model-service/filtering.md

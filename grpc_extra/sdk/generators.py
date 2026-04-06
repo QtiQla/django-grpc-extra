@@ -306,13 +306,14 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
         proto_files: list[Path],
         include_root: Path,
     ) -> list[MessageSpec]:
-        raw_specs: list[tuple[str, str, str, list[MessageFieldSpec]]] = []
+        raw_specs: list[tuple[str, str, str, str, list[MessageFieldSpec]]] = []
         for proto_file in proto_files:
             proto_text = proto_file.read_text(encoding="utf-8")
             rel = proto_file.relative_to(include_root)
             sdk_app = self._sdk_app_name(rel)
             module_base = ".".join(rel.with_suffix("").parts)
             pb2_alias = self._module_alias(f"{module_base}_pb2")
+            proto_name_prefix = self._to_pascal(rel.stem)
             for match in re.finditer(
                 r"message\s+(?P<name>\w+)\s*\{(?P<body>.*?)\}",
                 proto_text,
@@ -320,18 +321,21 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             ):
                 message_name = match.group("name")
                 fields = self._parse_message_fields(match.group("body"), pb2_alias)
-                raw_specs.append((sdk_app, pb2_alias, message_name, fields))
+                raw_specs.append(
+                    (sdk_app, pb2_alias, proto_name_prefix, message_name, fields)
+                )
 
-        counts: dict[str, int] = {}
-        for _, _, message_name, _ in raw_specs:
-            counts[message_name] = counts.get(message_name, 0) + 1
+        counts: dict[tuple[str, str], int] = {}
+        for sdk_app, _, _, message_name, _ in raw_specs:
+            key = (sdk_app, message_name)
+            counts[key] = counts.get(key, 0) + 1
 
         specs: list[MessageSpec] = []
-        for sdk_app, pb2_alias, message_name, fields in raw_specs:
-            if counts[message_name] == 1:
+        for sdk_app, pb2_alias, proto_name_prefix, message_name, fields in raw_specs:
+            if counts[(sdk_app, message_name)] == 1:
                 model_name = message_name
             else:
-                model_name = f"{self._pascal_from_alias(pb2_alias)}_{message_name}"
+                model_name = f"{proto_name_prefix}{message_name}"
             specs.append(
                 MessageSpec(
                     sdk_app=sdk_app,
@@ -341,7 +345,35 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
                     fields=fields,
                 )
             )
+        model_name_map = {
+            (spec.pb2_alias, spec.message_name): spec.model_name for spec in specs
+        }
+        for spec in specs:
+            spec.fields = [
+                MessageFieldSpec(
+                    name=field.name,
+                    annotation=self._rewrite_annotation(
+                        field.annotation, spec.pb2_alias, model_name_map
+                    ),
+                    default_expr=field.default_expr,
+                )
+                for field in spec.fields
+            ]
         return specs
+
+    def _rewrite_annotation(
+        self,
+        annotation: str,
+        pb2_alias: str,
+        model_name_map: dict[tuple[str, str], str],
+    ) -> str:
+        for (alias, message_name), model_name in model_name_map.items():
+            if alias != pb2_alias or message_name == model_name:
+                continue
+            annotation = re.sub(
+                rf"\b{re.escape(message_name)}\b", model_name, annotation
+            )
+        return annotation
 
     def _parse_message_fields(
         self, message_body: str, pb2_alias: str
@@ -414,6 +446,11 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             "string": "str",
             "bytes": "str",
             "google.protobuf.Timestamp": "datetime",
+            "google.protobuf.Struct": "dict[str, Any]",
+            "google.protobuf.ListValue": "list[Any]",
+            "google.protobuf.Value": "Any",
+            "google.type.Date": "date",
+            "google.type.TimeOfDay": "time",
             "google.protobuf.Empty": "dict[str, Any]",
         }
         message_name = proto_type.split(".")[-1]
@@ -429,11 +466,15 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
         if label == "repeated":
             return (f"list[{base_type}]", "Field(default_factory=list)")
         if label == "optional":
-            return (f"{base_type} | None", "None")
-        return (base_type, "...")
+            return (f"{base_type} | None", "Field(None)")
+        return (base_type, "Field(...)")
 
     def _pascal_from_alias(self, alias: str) -> str:
         parts = [part for part in alias.split("_") if part]
+        return "".join(part[:1].upper() + part[1:] for part in parts)
+
+    def _to_pascal(self, value: str) -> str:
+        parts = [part for part in re.split(r"[^a-zA-Z0-9]+", value) if part]
         return "".join(part[:1].upper() + part[1:] for part in parts)
 
     def _parse_service_methods(self, body: str) -> list[RpcMethodSpec]:
@@ -663,12 +704,16 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             from collections.abc import Iterable
             from typing import Any
 
+            from .helpers import coerce_protobuf_compatible
             import grpc
 
             from .errors import map_rpc_error
 
 
             class BaseServiceClient:
+                STUB_CLASS: type[Any]
+                PB2_MODULE: Any
+
                 def __init__(self, grpc_client) -> None:
                     self._grpc_client = grpc_client
                     self._stub = None
@@ -692,7 +737,7 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
                     if request_cls is not None and isinstance(request, request_cls):
                         return request
                     if request_cls is not None and isinstance(request, dict):
-                        return request_cls(**request)
+                        return request_cls(**coerce_protobuf_compatible(request))
                     return request
 
                 def _coerce_stream_request(self, request_type: str, request_iter: Iterable[Any]):
@@ -817,7 +862,9 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
         lines = [
             "from __future__ import annotations",
             "",
-            "from datetime import datetime",
+            "from datetime import date, datetime, time",
+            "",
+            "from typing import Any",
             "",
             "from pydantic import BaseModel, ConfigDict, Field",
             "",
@@ -847,11 +894,27 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
     def _render_models_index(self, by_app: dict[str, list[MessageSpec]]) -> str:
         lines = ["from __future__ import annotations", ""]
         exports: list[str] = []
+        export_counts: dict[str, int] = {}
+        for app_specs in by_app.values():
+            for spec in app_specs:
+                export_counts[spec.model_name] = (
+                    export_counts.get(spec.model_name, 0) + 1
+                )
         for app in sorted(by_app):
-            classes = ", ".join(spec.model_name for spec in by_app[app])
-            if classes:
-                lines.append(f"from .generated.{app}.models import {classes}")
-                exports.extend(spec.model_name for spec in by_app[app])
+            import_names: list[str] = []
+            app_prefix = self._to_pascal(app)
+            for spec in by_app[app]:
+                if export_counts[spec.model_name] == 1:
+                    import_names.append(spec.model_name)
+                    exports.append(spec.model_name)
+                else:
+                    alias = f"{app_prefix}{spec.model_name}"
+                    import_names.append(f"{spec.model_name} as {alias}")
+                    exports.append(alias)
+            if import_names:
+                lines.append(
+                    f"from .generated.{app}.models import {', '.join(import_names)}"
+                )
         lines.extend(["", "", f"__all__ = {exports!r}", ""])
         return "\n".join(lines)
 
@@ -864,7 +927,11 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             from collections.abc import Iterable
             from typing import Any
 
-            from .helpers import message_to_dict
+            from .helpers import (
+                coerce_protobuf_compatible,
+                message_to_dict,
+                normalize_model_payload,
+            )
 
 
             class BaseTypedServiceClient:
@@ -875,13 +942,16 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
                     if request is None:
                         return None
                     if hasattr(request, "model_dump"):
-                        return request.model_dump(exclude_none=True, by_alias=True)
-                    return request
+                        return coerce_protobuf_compatible(
+                            request.model_dump(exclude_none=True, by_alias=True)
+                        )
+                    return coerce_protobuf_compatible(request)
 
                 def _to_model(self, model_cls, response: Any):
                     if model_cls is Any:
                         return response
-                    return model_cls.model_validate(message_to_dict(response))
+                    payload = normalize_model_payload(message_to_dict(response), model_cls)
+                    return model_cls.model_validate(payload)
 
                 def _to_model_stream(self, model_cls, response_stream: Iterable[Any]):
                     for item in response_stream:
@@ -1123,9 +1193,14 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             from __future__ import annotations
 
             import inspect
-            from typing import Any
+            import sys
+            from datetime import date, datetime, time
+            from decimal import Decimal
+            from typing import Any, get_args, get_origin, get_type_hints
+            from uuid import UUID
 
             from google.protobuf.json_format import MessageToDict
+            from pydantic import BaseModel
 
 
             def message_to_dict(message: Any) -> dict[str, Any]:
@@ -1139,6 +1214,34 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
                 return MessageToDict(message, **kwargs)
 
 
+            def coerce_protobuf_compatible(value: Any) -> Any:
+                \"\"\"Convert Python-native values into protobuf-friendly payloads.\"\"\"
+                if isinstance(value, Decimal):
+                    return str(value)
+                if isinstance(value, UUID):
+                    return str(value)
+                if isinstance(value, date) and not isinstance(value, datetime):
+                    return {
+                        "year": value.year,
+                        "month": value.month,
+                        "day": value.day,
+                    }
+                if isinstance(value, time):
+                    return {
+                        "hours": value.hour,
+                        "minutes": value.minute,
+                        "seconds": value.second,
+                        "nanos": value.microsecond * 1000,
+                    }
+                if isinstance(value, dict):
+                    return {k: coerce_protobuf_compatible(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [coerce_protobuf_compatible(v) for v in value]
+                if isinstance(value, tuple):
+                    return tuple(coerce_protobuf_compatible(v) for v in value)
+                return value
+
+
             def extract_results(message_or_dict: Any) -> list[Any]:
                 \"\"\"Return paginated `results` list when present, otherwise empty list.\"\"\"
                 if isinstance(message_or_dict, dict):
@@ -1147,6 +1250,67 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
                     payload = message_to_dict(message_or_dict)
                 value = payload.get("results", [])
                 return value if isinstance(value, list) else []
+
+
+            def _normalize_typed_value(value: Any, annotation: Any) -> Any:
+                origin = get_origin(annotation)
+                if origin is None:
+                    target = annotation
+                elif origin in (list, tuple, set):
+                    args = get_args(annotation)
+                    inner = args[0] if args else Any
+                    if isinstance(value, list):
+                        return [_normalize_typed_value(item, inner) for item in value]
+                    return value
+                elif origin is dict:
+                    return value
+                else:
+                    args = [arg for arg in get_args(annotation) if arg is not type(None)]
+                    if len(args) == 1:
+                        target = args[0]
+                    else:
+                        target = annotation
+
+                if target is date and isinstance(value, dict):
+                    if {"year", "month", "day"} <= set(value):
+                        return date(value["year"], value["month"], value["day"])
+                    return value
+
+                if target is time and isinstance(value, dict):
+                    if {"hours", "minutes", "seconds"} <= set(value):
+                        return time(
+                            value["hours"],
+                            value["minutes"],
+                            value["seconds"],
+                            value.get("nanos", 0) // 1000,
+                        )
+                    return value
+
+                if isinstance(target, type) and issubclass(target, BaseModel) and isinstance(value, dict):
+                    return normalize_model_payload(value, target)
+
+                return value
+
+
+            def normalize_model_payload(payload: Any, model_cls: type[BaseModel]) -> Any:
+                \"\"\"Normalize protobuf JSON payload to fit generated pydantic models.\"\"\"
+                if not isinstance(payload, dict):
+                    return payload
+
+                normalized = dict(payload)
+                module = sys.modules.get(model_cls.__module__)
+                module_globals = vars(module) if module is not None else {}
+                resolved_hints = get_type_hints(
+                    model_cls, globalns=module_globals, include_extras=True
+                )
+                for field_name, field_info in model_cls.model_fields.items():
+                    if field_name not in normalized:
+                        continue
+                    annotation = resolved_hints.get(field_name, field_info.annotation)
+                    normalized[field_name] = _normalize_typed_value(
+                        normalized[field_name], annotation
+                    )
+                return normalized
             """
             ).strip()
             + "\n"
@@ -1169,6 +1333,7 @@ class PythonClientSDKGenerator(BaseClientSDKGenerator):
             dependencies = [
               "grpcio>=1.50",
               "protobuf>=4.25",
+              "googleapis-common-protos>=1.63",
               "pydantic>=2.0",
             ]
 

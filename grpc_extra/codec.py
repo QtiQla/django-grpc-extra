@@ -4,7 +4,8 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, get_args, get_origin, cast
+from types import UnionType
+from typing import Any, Union, cast, get_args, get_origin
 from uuid import UUID
 
 from django.db.models import Model, QuerySet
@@ -17,6 +18,9 @@ def decode_request_value(value: Any, schema: type[BaseModel] | None) -> Any:
     if schema is None:
         return value
     payload = _to_payload(value)
+    if payload is None:
+        payload = {}
+    payload = _coerce_google_types_to_python(payload, schema)
     try:
         return schema.model_validate(payload)
     except Exception as exc:
@@ -138,6 +142,97 @@ def _to_payload(value: Any) -> Any:
             preserving_proto_field_name=True,
         )
     return value
+
+
+def _coerce_google_types_to_python(
+    value: Any, schema: type[BaseModel] | None = None
+) -> Any:
+    """Convert google.type.Date/TimeOfDay dicts to Python date/time using schema annotations.
+
+    Relies on the pydantic schema to know which fields expect date/time — avoids
+    false positives from shape-based guessing (e.g. a message that happens to
+    have fields named 'hours' and 'minutes' would not be a TimeOfDay).
+
+    MessageToDict omits zero-value scalar fields in proto3 (hours=0 won't appear),
+    so missing keys are filled with safe defaults during conversion.
+    """
+    if isinstance(value, list):
+        return [_coerce_google_types_to_python(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    if schema is None or not hasattr(schema, "model_fields"):
+        return {k: _coerce_google_types_to_python(v) for k, v in value.items()}
+    result = {}
+    for key, val in value.items():
+        field_info = _resolve_schema_field(schema, key)
+        if field_info is None:
+            result[key] = _coerce_google_types_to_python(val)
+        else:
+            result[key] = _coerce_value_by_annotation(val, field_info.annotation)
+    return result
+
+
+def _resolve_schema_field(schema: type[BaseModel], key: str):
+    field_info = schema.model_fields.get(key)
+    if field_info is not None:
+        return field_info
+    for candidate in schema.model_fields.values():
+        if candidate.alias == key:
+            return candidate
+    return None
+
+
+def _coerce_value_by_annotation(value: Any, annotation: Any) -> Any:
+    inner = _unwrap_optional_annotation(annotation)
+    origin = get_origin(inner)
+    if inner is date and isinstance(value, dict):
+        return _dict_to_date(value)
+    if inner is time and isinstance(value, dict):
+        return _dict_to_time(value)
+    if (
+        isinstance(inner, type)
+        and issubclass(inner, BaseModel)
+        and isinstance(value, dict)
+    ):
+        return _coerce_google_types_to_python(value, inner)
+    if origin is list and isinstance(value, list):
+        args = get_args(inner)
+        item_ann = args[0] if args else None
+        if item_ann is not None:
+            return [_coerce_value_by_annotation(v, item_ann) for v in value]
+    return value
+
+
+def _unwrap_optional_annotation(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    if origin is Union or isinstance(annotation, UnionType):
+        non_none = [a for a in get_args(annotation) if a is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+    return annotation
+
+
+def _dict_to_date(value: dict) -> date:
+    try:
+        return date(value.get("year", 1), value.get("month", 1), value.get("day", 1))
+    except (ValueError, TypeError):
+        raise RequestDecodeError(
+            f"Invalid date components in request: {value}"
+        ) from None
+
+
+def _dict_to_time(value: dict) -> time:
+    try:
+        return time(
+            value.get("hours", 0),
+            value.get("minutes", 0),
+            value.get("seconds", 0),
+            value.get("nanos", 0) // 1000,
+        )
+    except (ValueError, TypeError):
+        raise RequestDecodeError(
+            f"Invalid time components in request: {value}"
+        ) from None
 
 
 def _coerce_protobuf_compatible(value: Any) -> Any:

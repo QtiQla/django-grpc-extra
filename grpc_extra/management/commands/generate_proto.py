@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from datetime import date, datetime, time
-import importlib
 from decimal import Decimal
 from pathlib import Path
 from types import UnionType

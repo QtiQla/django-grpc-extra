@@ -14,7 +14,6 @@ from grpc_extra.registry import ServiceDefinition, registry
 from grpc_extra.sdk.generators import BaseClientSDKGenerator, SDKGenerationError
 from grpc_extra.utils import normalize_proto_path
 
-
 DEFAULT_SDK_GENERATORS = {
     "python": "grpc_extra.sdk.generators.PythonClientSDKGenerator",
     "php": "grpc_extra.sdk.generators.PhpClientSDKGenerator",

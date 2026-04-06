@@ -71,7 +71,7 @@ class ChoiceEndpointConfig(BaseModel):
             self.source, models.TextChoices
         ):
             return TextChoiceSchema
-        choices = list(getattr(self.source, "choices"))
+        choices = list(self.source.choices)
         if not choices:
             return TextChoiceSchema
         first_value = choices[0][0]

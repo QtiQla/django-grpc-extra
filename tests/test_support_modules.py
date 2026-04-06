@@ -4,8 +4,8 @@ import pytest
 from django.core.exceptions import ObjectDoesNotExist
 from pydantic import BaseModel, ValidationError
 
-from grpc_extra.decorators import grpc_method, grpc_service
 from grpc_extra.apps import GrpcExtraConfig
+from grpc_extra.decorators import grpc_method, grpc_service
 from grpc_extra.exceptions import (
     MappedError,
     RequestDecodeError,
